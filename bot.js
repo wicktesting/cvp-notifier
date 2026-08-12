@@ -700,7 +700,6 @@ function buildStockEmbed(
         );
 
     let description = "";
-    let lineCount = 0;
 
     if (inStock.length > 0) {
 
@@ -721,33 +720,10 @@ function buildStockEmbed(
                 })
                 .join("\n");
 
-        lineCount = inStock.length;
-
     } else {
 
         description =
             "_Nothing in stock right now._";
-
-        lineCount = 1;
-    }
-
-    // Pad with invisible lines (zero-width space) so the embed
-    // is always the same height, whether 1 item or all of them
-    // are in stock — the hidden items stay hidden, only the
-    // blank space is added back in.
-    const padCount =
-        Math.max(
-            0,
-            items.length - lineCount
-        );
-
-    if (padCount > 0) {
-
-        description +=
-            "\n" +
-            Array(padCount)
-                .fill("\u200B")
-                .join("\n");
     }
 
     const footer =
