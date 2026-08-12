@@ -8,18 +8,22 @@ const db = low(adapter);
 // Structure:
 // guilds: {
 //   "<guildId>": {
-//     channelId: "123",
+//     channels: { eggShop: "channelId", gearShop: "channelId", merchant: "channelId", weather: "channelId" },
 //     roles: { eggShop: "roleId", gearShop: "roleId", merchant: "roleId", weather: "roleId" }
 //   }
 // }
 db.defaults({ guilds: {} }).write();
 
 function getGuildConfig(guildId) {
-  return db.get(`guilds.${guildId}`).value() || { channelId: null, roles: {} };
+  return db.get(`guilds.${guildId}`).value() || { channels: {}, roles: {} };
 }
 
-function setChannel(guildId, channelId) {
-  db.set(`guilds.${guildId}.channelId`, channelId).write();
+function setChannel(guildId, eventType, channelId) {
+  db.set(`guilds.${guildId}.channels.${eventType}`, channelId).write();
+}
+
+function getChannel(guildId, eventType) {
+  return db.get(`guilds.${guildId}.channels.${eventType}`).value() || null;
 }
 
 function setRole(guildId, eventType, roleId) {
@@ -34,4 +38,4 @@ function allGuildConfigs() {
   return db.get("guilds").value() || {};
 }
 
-module.exports = { getGuildConfig, setChannel, setRole, clearRole, allGuildConfigs };
+module.exports = { getGuildConfig, setChannel, getChannel, setRole, clearRole, allGuildConfigs };
