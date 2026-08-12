@@ -780,11 +780,33 @@ local function runScan()
         Status.TextColor3 =
             Color3.fromRGB(60, 210, 100)
 
+        local eggInStock = 0
+
+        for _, stock in pairs(eggShop) do
+            if stock and stock > 0 then
+                eggInStock += 1
+            end
+        end
+
+        local gearInStock = 0
+
+        for _, stock in pairs(gearShop) do
+            if stock and stock > 0 then
+                gearInStock += 1
+            end
+        end
+
         DataLabel.Text =
             "🥚 Eggs: " ..
+            tostring(eggInStock) ..
+            "/" ..
             tostring(#EggNames) ..
+            " in stock" ..
             "\n⚙️ Gear: " ..
+            tostring(gearInStock) ..
+            "/" ..
             tostring(#GearNames) ..
+            " in stock" ..
             "\n🚚 Merchant: " ..
             tostring(merchant and merchant.name or "None") ..
             "\n🌦 Weather: " ..
