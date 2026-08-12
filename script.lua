@@ -198,6 +198,58 @@ Close.MouseButton1Click:Connect(function()
 end)
 
 -- ================================================================
+-- MINIMIZE BUTTON
+-- ================================================================
+
+local TweenService = game:GetService("TweenService")
+
+local FULL_HEIGHT = 125
+local MIN_HEIGHT = 36
+
+local Minimize = Instance.new("TextButton", Frame)
+
+Minimize.Size = UDim2.new(0, 22, 0, 22)
+
+Minimize.Position = UDim2.new(1, -53, 0, 5)
+
+Minimize.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+
+Minimize.BorderSizePixel = 0
+
+Minimize.Text = "-"
+
+Minimize.TextColor3 = Color3.new(1, 1, 1)
+
+Minimize.TextSize = 14
+Minimize.Font = Enum.Font.GothamBold
+
+Instance.new("UICorner", Minimize).CornerRadius = UDim.new(0, 4)
+
+local minimized = false
+
+Minimize.MouseButton1Click:Connect(function()
+
+    minimized = not minimized
+
+    Status.Visible = not minimized
+    DataLabel.Visible = not minimized
+
+    Minimize.Text = minimized and "+" or "-"
+
+    local targetHeight =
+        minimized and MIN_HEIGHT or FULL_HEIGHT
+
+    TweenService:Create(
+        Frame,
+        TweenInfo.new(0.18, Enum.EasingStyle.Quad),
+        {
+            Size = UDim2.new(0, 320, 0, targetHeight)
+        }
+    ):Play()
+
+end)
+
+-- ================================================================
 -- UTILITY
 -- ================================================================
 
