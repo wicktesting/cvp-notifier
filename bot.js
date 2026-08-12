@@ -433,7 +433,56 @@ function updatedFooterText(updatedAt) {
         return null;
     }
 
-    return `Updated <t:${timestamp}:R>`;
+    return `🕒 Updated <t:${timestamp}:R>`;
+}
+
+// ============================================================
+// NEXT RESTOCK (aligned to the real-world clock, e.g. xx:00,
+// xx:05, xx:10 ... xx:55 — not just "N minutes from now")
+// ============================================================
+
+function nextRestockUnix(intervalMinutes = 5) {
+
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    // +1000ms buffer so if we're called exactly ON a boundary,
+    // it rolls to the NEXT one instead of showing 0 seconds left.
+    const next =
+        Math.ceil(
+            (Date.now() + 1000) / intervalMs
+        ) * intervalMs;
+
+    return Math.floor(next / 1000);
+}
+
+function restockFooterText(
+    updatedAt,
+    {
+        showRestockTimer = false,
+        intervalMinutes = 5
+    } = {}
+) {
+
+    const lines = [];
+
+    if (showRestockTimer) {
+
+        lines.push(
+            `🔁 Restocks every ${intervalMinutes} minutes`
+        );
+
+        lines.push(
+            `⏳ Next restock <t:${nextRestockUnix(intervalMinutes)}:R>`
+        );
+    }
+
+    const updated = updatedFooterText(updatedAt);
+
+    if (updated) {
+        lines.push(updated);
+    }
+
+    return lines.join("\n");
 }
 
 // ============================================================
@@ -670,7 +719,13 @@ function buildStockEmbed(
     }
 
     const footer =
-        updatedFooterText(updatedAt);
+        restockFooterText(
+            updatedAt,
+            {
+                showRestockTimer: true,
+                intervalMinutes: 5
+            }
+        );
 
     if (footer) {
         description +=
