@@ -128,7 +128,31 @@ const commands = [
     new SlashCommandBuilder()
         .setName("setchannel")
         .setDescription(
-            "Set the channel for automatic stock notifications"
+            "Set the channel for a specific notification type"
+        )
+        .addStringOption((option) =>
+            option
+                .setName("event")
+                .setDescription("Notification type")
+                .setRequired(true)
+                .addChoices(
+                    {
+                        name: "Egg Shop",
+                        value: "eggShop"
+                    },
+                    {
+                        name: "Gear Shop",
+                        value: "gearShop"
+                    },
+                    {
+                        name: "Traveling Merchant",
+                        value: "merchant"
+                    },
+                    {
+                        name: "Weather",
+                        value: "weather"
+                    }
+                )
         )
         .addChannelOption((option) =>
             option
@@ -675,11 +699,6 @@ function buildStockEmbed(
             stockIsAvailable(item.stock)
         );
 
-    const outOfStock =
-        items.filter(item =>
-            !stockIsAvailable(item.stock)
-        );
-
     let description = "";
 
     if (inStock.length > 0) {
@@ -705,17 +724,6 @@ function buildStockEmbed(
 
         description =
             "_Nothing in stock right now._";
-    }
-
-    if (outOfStock.length > 0) {
-
-        description +=
-            "\n\n" +
-            outOfStock
-                .map(item =>
-                    `~~${item.name}~~`
-                )
-                .join(" · ");
     }
 
     const footer =
@@ -1108,6 +1116,11 @@ client.on(
                 "setchannel"
             ) {
 
+                const event =
+                    interaction.options.getString(
+                        "event"
+                    );
+
                 const channel =
                     interaction.options.getChannel(
                         "channel"
@@ -1115,12 +1128,20 @@ client.on(
 
                 db.setChannel(
                     interaction.guildId,
+                    event,
                     channel.id
                 );
 
+                const eventLabels = {
+                    eggShop: "Egg Shop",
+                    gearShop: "Gear Shop",
+                    merchant: "Traveling Merchant",
+                    weather: "Weather"
+                };
+
                 return interaction.reply({
                     content:
-                        `✅ Automatic notifications will now be posted in <#${channel.id}>.`,
+                        `✅ **${eventLabels[event] || event}** notifications will now be posted in <#${channel.id}>.`,
                     ephemeral: true
                 });
             }
@@ -1197,6 +1218,28 @@ client.on(
                         interaction.guildId
                     );
 
+                const eventLabels = {
+                    eggShop: "Egg Shop",
+                    gearShop: "Gear Shop",
+                    merchant: "Traveling Merchant",
+                    weather: "Weather"
+                };
+
+                const channels =
+                    Object.entries(
+                        config.channels || {}
+                    );
+
+                const channelLines =
+                    channels.length > 0
+                        ? channels
+                            .map(
+                                ([key, value]) =>
+                                    `**${eventLabels[key] || key}:** <#${value}>`
+                            )
+                            .join("\n")
+                        : "_None set — use /setchannel_";
+
                 const roles =
                     Object.entries(
                         config.roles || {}
@@ -1207,7 +1250,7 @@ client.on(
                         ? roles
                             .map(
                                 ([key, value]) =>
-                                    `**${key}:** <@&${value}>`
+                                    `**${eventLabels[key] || key}:** <@&${value}>`
                             )
                             .join("\n")
                         : "_None set — use /setrole_";
@@ -1218,11 +1261,7 @@ client.on(
                             "⚙️ CVP Notifier Settings"
                         )
                         .setDescription(
-                            `**Notification Channel:** ${
-                                config.channelId
-                                    ? `<#${config.channelId}>`
-                                    : "_Not set — use /setchannel_"
-                            }\n\n` +
+                            `**Notification Channels:**\n${channelLines}\n\n` +
                             `**Ping Roles:**\n${roleLines}`
                         )
                         .setColor(0x2b2d31);
@@ -1279,8 +1318,6 @@ client.on(
 
 let lastState = {
 
-    eggShop: {},
-    gearShop: {},
     merchantName: null,
     weather: null,
 
@@ -1304,7 +1341,11 @@ async function broadcast(
         of Object.entries(guildConfigs)
     ) {
 
-        if (!config.channelId) {
+        const channelId =
+            config.channels &&
+            config.channels[eventType];
+
+        if (!channelId) {
             continue;
         }
 
@@ -1312,7 +1353,7 @@ async function broadcast(
 
             const channel =
                 await client.channels.fetch(
-                    config.channelId
+                    channelId
                 );
 
             if (!channel) {
@@ -1396,31 +1437,6 @@ async function pollOnce() {
             "📊 Initializing stock state..."
         );
 
-        for (
-            const key
-            of [
-                "eggShop",
-                "gearShop"
-            ]
-        ) {
-
-            const items =
-                normalizeStockList(
-                    data[key]
-                );
-
-            for (
-                const item
-                of items
-            ) {
-
-                lastState[key][item.name] =
-                    stockIsAvailable(
-                        item.stock
-                    );
-            }
-        }
-
         const merchant =
             normalizeMerchant(
                 data.merchant
@@ -1443,94 +1459,6 @@ async function pollOnce() {
         );
 
         return;
-    }
-
-    // ========================================================
-    // EGG SHOP + GEAR SHOP
-    // ========================================================
-
-    for (
-        const [
-            key,
-            title,
-            icon,
-            eventType
-        ]
-        of [
-            [
-                "eggShop",
-                "🥚 The Egg Shop has been restocked!",
-                "🥚",
-                "eggShop"
-            ],
-            [
-                "gearShop",
-                "⚙️ The Gear Shop has been restocked!",
-                "⚙️",
-                "gearShop"
-            ]
-        ]
-    ) {
-
-        const items =
-            normalizeStockList(
-                data[key]
-            );
-
-        const newlyInStock = [];
-
-        for (
-            const item
-            of items
-        ) {
-
-            const wasAvailable =
-                lastState[key][item.name] ||
-                false;
-
-            const isAvailable =
-                stockIsAvailable(
-                    item.stock
-                );
-
-            if (
-                isAvailable &&
-                !wasAvailable
-            ) {
-
-                newlyInStock.push(
-                    item
-                );
-            }
-
-            lastState[key][item.name] =
-                isAvailable;
-        }
-
-        if (
-            newlyInStock.length > 0
-        ) {
-
-            console.log(
-                `🛒 ${eventType}: ${newlyInStock.length} item(s) restocked`
-            );
-
-            const embed =
-                buildStockEmbed(
-                    title,
-                    newlyInStock,
-                    {
-                        icon,
-                        updatedAt:
-                            data.updatedAt
-                    }
-                );
-
-            await broadcast(
-                eventType,
-                embed
-            );
-        }
     }
 
     // ========================================================
@@ -1599,6 +1527,116 @@ async function pollOnce() {
 
     lastState.weather =
         weather;
+}
+
+// ============================================================
+// RESTOCK BROADCAST (Egg Shop / Gear Shop)
+//
+// Unlike merchant/weather (which change unpredictably and are
+// handled above via diffing), the shops restock on a fixed
+// real-world clock — every xx:00, xx:05, xx:10 ... xx:55.
+// So instead of diffing, this just posts the FULL current
+// in-stock list right after each of those marks.
+// ============================================================
+
+async function broadcastFullShopStock() {
+
+    let data;
+
+    try {
+
+        data =
+            await fetchStatus();
+
+    } catch (error) {
+
+        console.error(
+            "❌ Restock broadcast fetch failed:",
+            error.message
+        );
+
+        return;
+    }
+
+    console.log(
+        "🔁 Restock mark reached — broadcasting current shop stock"
+    );
+
+    const eggEmbed =
+        buildStockEmbed(
+            "🥚 The Egg Shop has been restocked!",
+            normalizeStockList(
+                data.eggShop
+            ),
+            {
+                icon: "🥚",
+                updatedAt:
+                    data.updatedAt
+            }
+        );
+
+    await broadcast(
+        "eggShop",
+        eggEmbed
+    );
+
+    const gearEmbed =
+        buildStockEmbed(
+            "⚙️ The Gear Shop has been restocked!",
+            normalizeStockList(
+                data.gearShop
+            ),
+            {
+                icon: "⚙️",
+                updatedAt:
+                    data.updatedAt
+            }
+        );
+
+    await broadcast(
+        "gearShop",
+        gearEmbed
+    );
+}
+
+// How long after the exact xx:00/xx:05 mark to wait before
+// broadcasting — gives the in-game script's scan (which runs
+// every 30s) time to pick up the fresh stock and POST it to
+// the API first, so the broadcast isn't sent with stale data.
+const RESTOCK_BROADCAST_DELAY_MS = 20 * 1000;
+
+function scheduleRestockBroadcast(intervalMinutes = 5) {
+
+    const intervalMs =
+        intervalMinutes * 60 * 1000;
+
+    const now = Date.now();
+
+    const nextMark =
+        Math.ceil(
+            (now + 1000) / intervalMs
+        ) * intervalMs;
+
+    const delay =
+        (nextMark - now) +
+        RESTOCK_BROADCAST_DELAY_MS;
+
+    console.log(
+        `⏰ Next restock broadcast in ~${Math.round(delay / 1000)}s`
+    );
+
+    setTimeout(
+        async () => {
+
+            await broadcastFullShopStock();
+
+            setInterval(
+                broadcastFullShopStock,
+                intervalMs
+            );
+        },
+        delay
+    );
 }
 
 // ============================================================
@@ -1707,6 +1745,12 @@ client.once(
             pollOnce,
             POLL_INTERVAL_MS
         );
+
+        // ----------------------------------------------------
+        // RESTOCK BROADCAST SCHEDULER
+        // ----------------------------------------------------
+
+        scheduleRestockBroadcast(5);
 
         console.log("");
         console.log("==========================================");
