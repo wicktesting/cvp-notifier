@@ -10,10 +10,10 @@ const {
     REST,
     Routes,
     SlashCommandBuilder,
-    PermissionFlagsBits
+    PermissionFlagsBits,
+    ChannelType
 } = require("discord.js");
 
-const fetch = require("node-fetch");
 const db = require("./db");
 const { weatherInfo } = require("./gameData");
 
@@ -22,6 +22,7 @@ const { weatherInfo } = require("./gameData");
 // ============================================================
 
 const API_BASE = process.env.CVP_API_BASE_URL;
+
 const POLL_INTERVAL_MS = parseInt(
     process.env.POLL_INTERVAL_MS || "30000",
     10
@@ -33,14 +34,11 @@ const WIKI_URL =
 
 const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const TEST_GUILD_ID = process.env.DISCORD_TEST_GUILD_ID;
 
-// Permissions:
-// View Channel
-// Send Messages
-// Embed Links
-// Read Message History
-const INVITE_PERMISSIONS = "216064";
+// Optional.
+// If provided, commands are registered specifically to this guild.
+// If not provided, commands are registered to every guild the bot is in.
+const TEST_GUILD_ID = process.env.DISCORD_TEST_GUILD_ID;
 
 // ============================================================
 // VALIDATION
@@ -66,22 +64,36 @@ if (!API_BASE) {
 // ============================================================
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [
+        GatewayIntentBits.Guilds
+    ]
 });
 
 // ============================================================
-// SLASH COMMAND DEFINITIONS
+// SLASH COMMANDS
 // ============================================================
 
 const commands = [
+
+    // --------------------------------------------------------
+    // EGG SHOP
+    // --------------------------------------------------------
 
     new SlashCommandBuilder()
         .setName("eggshop")
         .setDescription("Show the current Egg Shop stock"),
 
+    // --------------------------------------------------------
+    // GEAR SHOP
+    // --------------------------------------------------------
+
     new SlashCommandBuilder()
         .setName("gearshop")
         .setDescription("Show the current Gear Shop stock"),
+
+    // --------------------------------------------------------
+    // MERCHANT
+    // --------------------------------------------------------
 
     new SlashCommandBuilder()
         .setName("merchant")
@@ -89,40 +101,62 @@ const commands = [
             "Show the current Traveling Merchant status and stock"
         ),
 
+    // --------------------------------------------------------
+    // WEATHER
+    // --------------------------------------------------------
+
     new SlashCommandBuilder()
         .setName("weather")
-        .setDescription("Show the current in-game weather"),
+        .setDescription(
+            "Show the current in-game weather"
+        ),
+
+    // --------------------------------------------------------
+    // FULL STOCK
+    // --------------------------------------------------------
 
     new SlashCommandBuilder()
         .setName("stock")
         .setDescription(
-            "Show a full overview: Egg Shop, Gear Shop, Merchant, and Weather"
+            "Show Egg Shop, Gear Shop, Merchant, and Weather"
         ),
+
+    // --------------------------------------------------------
+    // SET CHANNEL
+    // --------------------------------------------------------
 
     new SlashCommandBuilder()
         .setName("setchannel")
         .setDescription(
-            "Set the channel where automatic stock notifications are posted"
+            "Set the channel for automatic stock notifications"
         )
         .addChannelOption((option) =>
             option
                 .setName("channel")
                 .setDescription("Notification channel")
                 .setRequired(true)
+                .addChannelTypes(
+                    ChannelType.GuildText,
+                    ChannelType.GuildAnnouncement
+                )
         )
         .setDefaultMemberPermissions(
             PermissionFlagsBits.ManageGuild
         ),
 
+    // --------------------------------------------------------
+    // SET ROLE
+    // --------------------------------------------------------
+
     new SlashCommandBuilder()
         .setName("setrole")
         .setDescription(
-            "Set a role to ping for a specific notification type"
+            "Set a role to ping for a notification type"
         )
         .addStringOption((option) =>
             option
                 .setName("event")
-                .setDescription("Which notification type")
+                .setDescription("Notification type")
                 .setRequired(true)
                 .addChoices(
                     {
@@ -153,15 +187,19 @@ const commands = [
             PermissionFlagsBits.ManageGuild
         ),
 
+    // --------------------------------------------------------
+    // CLEAR ROLE
+    // --------------------------------------------------------
+
     new SlashCommandBuilder()
         .setName("clearrole")
         .setDescription(
-            "Remove the ping role for a specific notification type"
+            "Remove a notification ping role"
         )
         .addStringOption((option) =>
             option
                 .setName("event")
-                .setDescription("Which notification type")
+                .setDescription("Notification type")
                 .setRequired(true)
                 .addChoices(
                     {
@@ -186,15 +224,19 @@ const commands = [
             PermissionFlagsBits.ManageGuild
         ),
 
+    // --------------------------------------------------------
+    // SETTINGS
+    // --------------------------------------------------------
+
     new SlashCommandBuilder()
         .setName("settings")
         .setDescription(
-            "View this server's notification configuration"
+            "View this server's notification settings"
         )
         .setDefaultMemberPermissions(
             PermissionFlagsBits.ManageGuild)
 
-].map((command) => command.toJSON());
+].map(command => command.toJSON());
 
 // ============================================================
 // REGISTER SLASH COMMANDS
@@ -202,20 +244,25 @@ const commands = [
 
 async function registerCommands() {
 
+    console.log("");
+    console.log("==========================================");
+    console.log("🔧 REGISTERING SLASH COMMANDS");
+    console.log("==========================================");
+
     const rest = new REST({
         version: "10"
     }).setToken(DISCORD_TOKEN);
 
     try {
 
-        console.log("==========================================");
-        console.log("REGISTERING CVP SLASH COMMANDS");
-        console.log("==========================================");
+        // ----------------------------------------------------
+        // SPECIFIC TEST GUILD
+        // ----------------------------------------------------
 
         if (TEST_GUILD_ID) {
 
             console.log(
-                `Registering commands to test server: ${TEST_GUILD_ID}`
+                `🎯 Target guild from DISCORD_TEST_GUILD_ID: ${TEST_GUILD_ID}`
             );
 
             await rest.put(
@@ -229,36 +276,64 @@ async function registerCommands() {
             );
 
             console.log(
-                `✅ Registered ${commands.length} commands to test server.`
+                `✅ Successfully registered ${commands.length} commands to ${TEST_GUILD_ID}`
             );
 
-        } else {
+        }
+
+        // ----------------------------------------------------
+        // OTHERWISE REGISTER TO EVERY GUILD
+        // ----------------------------------------------------
+
+        else {
 
             console.log(
-                "⚠️ DISCORD_TEST_GUILD_ID is not configured."
+                "ℹ️ DISCORD_TEST_GUILD_ID is not set."
             );
 
             console.log(
-                "Registering commands globally instead."
+                `📡 Bot is currently in ${client.guilds.cache.size} guild(s).`
             );
 
-            await rest.put(
-                Routes.applicationCommands(CLIENT_ID),
-                {
-                    body: commands
+            for (const [guildId, guild] of client.guilds.cache) {
+
+                try {
+
+                    await rest.put(
+                        Routes.applicationGuildCommands(
+                            CLIENT_ID,
+                            guildId
+                        ),
+                        {
+                            body: commands
+                        }
+                    );
+
+                    console.log(
+                        `✅ Registered ${commands.length} commands → ${guild.name} (${guildId})`
+                    );
+
+                } catch (guildError) {
+
+                    console.error(
+                        `❌ Failed to register commands in ${guild.name} (${guildId})`
+                    );
+
+                    console.error(guildError.message);
                 }
-            );
-
-            console.log(
-                `✅ Registered ${commands.length} global commands.`
-            );
+            }
         }
 
         console.log("==========================================");
+        console.log("✅ COMMAND REGISTRATION COMPLETE");
+        console.log("==========================================");
+        console.log("");
 
     } catch (error) {
 
-        console.error("❌ Failed to register slash commands.");
+        console.error("");
+        console.error("❌ COMMAND REGISTRATION FAILED");
+        console.error("------------------------------------------");
 
         if (error?.rawError) {
             console.error(error.rawError);
@@ -266,6 +341,7 @@ async function registerCommands() {
             console.error(error);
         }
 
+        console.error("------------------------------------------");
     }
 }
 
@@ -275,17 +351,18 @@ async function registerCommands() {
 
 async function fetchStatus() {
 
-    const res = await fetch(
+    const response = await fetch(
         `${API_BASE}/api/status`
     );
 
-    if (!res.ok) {
+    if (!response.ok) {
+
         throw new Error(
-            `API returned ${res.status}`
+            `API returned HTTP ${response.status}`
         );
     }
 
-    return res.json();
+    return response.json();
 }
 
 // ============================================================
@@ -298,7 +375,7 @@ function buildLinkButtons() {
         `https://discord.com/oauth2/authorize` +
         `?client_id=${CLIENT_ID}` +
         `&scope=bot%20applications.commands` +
-        `&permissions=${INVITE_PERMISSIONS}`;
+        `&permissions=216064`;
 
     return new ActionRowBuilder().addComponents(
 
@@ -318,7 +395,7 @@ function buildLinkButtons() {
 }
 
 // ============================================================
-// STOCK FORMATTING
+// STOCK HELPERS
 // ============================================================
 
 function formatStockBadge(stock) {
@@ -347,19 +424,20 @@ function updatedFooterText(updatedAt) {
         return null;
     }
 
-    const ts = Math.floor(
-        new Date(updatedAt).getTime() / 1000
-    );
+    const timestamp =
+        Math.floor(
+            new Date(updatedAt).getTime() / 1000
+        );
 
-    if (Number.isNaN(ts)) {
+    if (Number.isNaN(timestamp)) {
         return null;
     }
 
-    return `Updated <t:${ts}:R>`;
+    return `Updated <t:${timestamp}:R>`;
 }
 
 // ============================================================
-// NORMALIZERS
+// NORMALIZE STOCK
 // ============================================================
 
 function normalizeStockList(raw) {
@@ -368,9 +446,10 @@ function normalizeStockList(raw) {
         return [];
     }
 
+    // Array format
     if (Array.isArray(raw)) {
 
-        return raw.map((item) => ({
+        return raw.map(item => ({
 
             name:
                 item.name ||
@@ -382,10 +461,10 @@ function normalizeStockList(raw) {
                 item.stock !== undefined
                     ? item.stock
                     : item.Stock !== undefined
-                    ? item.Stock
-                    : item.inStock !== undefined
-                    ? item.inStock
-                    : null,
+                        ? item.Stock
+                        : item.inStock !== undefined
+                            ? item.inStock
+                            : null,
 
             rarity:
                 item.rarity ||
@@ -398,9 +477,9 @@ function normalizeStockList(raw) {
                 null
 
         }));
-
     }
 
+    // Object format
     return Object.entries(raw).map(
         ([name, stock]) => ({
             name,
@@ -410,6 +489,10 @@ function normalizeStockList(raw) {
         })
     );
 }
+
+// ============================================================
+// STOCK AVAILABLE
+// ============================================================
 
 function stockIsAvailable(stock) {
 
@@ -424,14 +507,26 @@ function stockIsAvailable(stock) {
         return stock > 0;
     }
 
-    const s = String(stock).toLowerCase();
+    const s =
+        String(stock)
+            .toLowerCase()
+            .trim();
 
-    return (
-        !s.includes("no stock") &&
-        s !== "0" &&
-        s.trim() !== ""
-    );
+    if (
+        s === "" ||
+        s === "0" ||
+        s.includes("no stock") ||
+        s.includes("out of stock")
+    ) {
+        return false;
+    }
+
+    return true;
 }
+
+// ============================================================
+// MERCHANT NORMALIZER
+// ============================================================
 
 function normalizeMerchant(raw) {
 
@@ -463,14 +558,18 @@ function normalizeMerchant(raw) {
             raw.countdown ||
             null,
 
-        items: normalizeStockList(
-            raw.items ||
-            raw.Items ||
-            []
-        )
-
+        items:
+            normalizeStockList(
+                raw.items ||
+                raw.Items ||
+                []
+            )
     };
 }
+
+// ============================================================
+// WEATHER NORMALIZER
+// ============================================================
 
 function normalizeWeather(raw) {
 
@@ -492,23 +591,24 @@ function normalizeWeather(raw) {
 }
 
 // ============================================================
-// EMBEDS
+// STOCK EMBED
 // ============================================================
 
 function buildStockEmbed(
     title,
     items,
-    opts = {}
+    options = {}
 ) {
 
     const {
         colorFallback = 0x2b2d31,
         updatedAt = null,
         icon = "•"
-    } = opts;
+    } = options;
 
-    const embed = new EmbedBuilder()
-        .setTitle(title);
+    const embed =
+        new EmbedBuilder()
+            .setTitle(title);
 
     if (items.length === 0) {
 
@@ -522,48 +622,49 @@ function buildStockEmbed(
     }
 
     const inStock =
-        items.filter((item) =>
+        items.filter(item =>
             stockIsAvailable(item.stock)
         );
 
     const outOfStock =
-        items.filter((item) =>
+        items.filter(item =>
             !stockIsAvailable(item.stock)
         );
 
-    let desc = "";
+    let description = "";
 
     if (inStock.length > 0) {
 
-        desc += inStock
-            .map((item) => {
+        description +=
+            inStock
+                .map(item => {
 
-                let line =
-                    `${icon} **${item.name}** ` +
-                    `${formatStockBadge(item.stock)}`;
+                    let line =
+                        `${icon} **${item.name}** ${formatStockBadge(item.stock)}`;
 
-                if (item.rarity) {
-                    line += ` _(${item.rarity})_`;
-                }
+                    if (item.rarity) {
+                        line +=
+                            ` _(${item.rarity})_`;
+                    }
 
-                return line;
+                    return line;
 
-            })
-            .join("\n");
+                })
+                .join("\n");
 
     } else {
 
-        desc += "_Nothing in stock right now._";
+        description =
+            "_Nothing in stock right now._";
     }
 
     if (outOfStock.length > 0) {
 
-        desc +=
+        description +=
             "\n\n" +
             outOfStock
-                .map(
-                    (item) =>
-                        `~~${item.name}~~`
+                .map(item =>
+                    `~~${item.name}~~`
                 )
                 .join(" · ");
     }
@@ -572,11 +673,12 @@ function buildStockEmbed(
         updatedFooterText(updatedAt);
 
     if (footer) {
-        desc += `\n\n${footer}`;
+        description +=
+            `\n\n${footer}`;
     }
 
     embed
-        .setDescription(desc)
+        .setDescription(description)
         .setColor(
             inStock.length > 0
                 ? 0x22c55e
@@ -597,32 +699,37 @@ function buildMerchantEmbed(
 
     if (!merchant) {
 
+        let description =
+            "No merchant is currently here.";
+
+        const footer =
+            updatedFooterText(updatedAt);
+
+        if (footer) {
+            description +=
+                `\n\n${footer}`;
+        }
+
         return new EmbedBuilder()
             .setTitle("🚚 Traveling Merchant")
-            .setDescription(
-                "No merchant is currently here." +
-                (
-                    updatedFooterText(updatedAt)
-                        ? `\n\n${updatedFooterText(updatedAt)}`
-                        : ""
-                )
-            )
+            .setDescription(description)
             .setColor(0x2b2d31);
     }
 
     const lines =
-        merchant.items.map(
-            (item) =>
-                `🛍️ **${item.name}** ` +
-                `${formatStockBadge(item.stock)}`
+        merchant.items.map(item =>
+            `🛍️ **${item.name}** ${formatStockBadge(item.stock)}`
         );
 
-    let desc =
-        merchant.timeLeft
-            ? `**Leaves in:** ${merchant.timeLeft}\n\n`
-            : "";
+    let description = "";
 
-    desc +=
+    if (merchant.timeLeft) {
+
+        description +=
+            `**Leaves in:** ${merchant.timeLeft}\n\n`;
+    }
+
+    description +=
         lines.length > 0
             ? lines.join("\n")
             : "_No item data available._";
@@ -631,14 +738,15 @@ function buildMerchantEmbed(
         updatedFooterText(updatedAt);
 
     if (footer) {
-        desc += `\n\n${footer}`;
+        description +=
+            `\n\n${footer}`;
     }
 
     return new EmbedBuilder()
         .setTitle(
             `🚚 Traveling Merchant: ${merchant.name}`
         )
-        .setDescription(desc)
+        .setDescription(description)
         .setColor(0xf59e0b);
 }
 
@@ -661,7 +769,16 @@ function buildWeatherEmbed(
             .setColor(0x2b2d31);
     }
 
-    const info = weatherInfo(weather);
+    let info = null;
+
+    try {
+        info = weatherInfo(weather);
+    } catch (error) {
+        console.error(
+            "weatherInfo error:",
+            error.message
+        );
+    }
 
     const embed =
         new EmbedBuilder()
@@ -669,13 +786,13 @@ function buildWeatherEmbed(
                 `🌦️ Current Weather: ${weather}`
             )
             .setColor(
-                info
+                info && info.color
                     ? info.color
                     : 0x344700
             );
 
-    let desc =
-        info
+    let description =
+        info && info.description
             ? info.description
             : "";
 
@@ -684,45 +801,58 @@ function buildWeatherEmbed(
         info.mutation
     ) {
 
-        desc +=
-            `\n\n**Mutation chance:** ` +
-            `${info.mutation} ` +
-            `(${Math.round(
-                info.mutationChance * 100
-            )}%)`;
+        const chance =
+            info.mutationChance !== undefined
+                ? Math.round(
+                    info.mutationChance * 100
+                )
+                : null;
+
+        description +=
+            `\n\n**Mutation chance:** ${info.mutation}`;
+
+        if (chance !== null) {
+            description +=
+                ` (${chance}%)`;
+        }
     }
 
     const footer =
         updatedFooterText(updatedAt);
 
     if (footer) {
-        desc += `\n\n${footer}`;
+        description +=
+            `\n\n${footer}`;
     }
 
     embed.setDescription(
-        desc || null
+        description || "No additional information available."
     );
 
     return embed;
 }
 
 // ============================================================
-// SLASH COMMAND HANDLER
+// COMMAND HANDLER
 // ============================================================
 
 client.on(
     "interactionCreate",
-    async (interaction) => {
+    async interaction => {
 
         if (!interaction.isChatInputCommand()) {
             return;
         }
 
+        console.log(
+            `📥 Command received: /${interaction.commandName} by ${interaction.user.tag}`
+        );
+
         try {
 
-            // ------------------------------------------------
+            // =================================================
             // EGG SHOP
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -755,9 +885,9 @@ client.on(
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // GEAR SHOP
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -790,9 +920,9 @@ client.on(
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // MERCHANT
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -820,9 +950,9 @@ client.on(
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // WEATHER
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -850,9 +980,9 @@ client.on(
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // FULL STOCK
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -914,9 +1044,9 @@ client.on(
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // SET CHANNEL
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -935,14 +1065,14 @@ client.on(
 
                 return interaction.reply({
                     content:
-                        `✅ Notifications will now be posted in <#${channel.id}>.`,
+                        `✅ Automatic notifications will now be posted in <#${channel.id}>.`,
                     ephemeral: true
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // SET ROLE
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -972,9 +1102,9 @@ client.on(
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // CLEAR ROLE
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
@@ -998,29 +1128,34 @@ client.on(
                 });
             }
 
-            // ------------------------------------------------
+            // =================================================
             // SETTINGS
-            // ------------------------------------------------
+            // =================================================
 
             if (
                 interaction.commandName ===
                 "settings"
             ) {
 
-                const cfg =
+                const config =
                     db.getGuildConfig(
                         interaction.guildId
                     );
 
-                const roleLines =
+                const roles =
                     Object.entries(
-                        cfg.roles || {}
-                    )
-                        .map(
-                            ([key, value]) =>
-                                `**${key}:** <@&${value}>`
-                        )
-                        .join("\n");
+                        config.roles || {}
+                    );
+
+                const roleLines =
+                    roles.length > 0
+                        ? roles
+                            .map(
+                                ([key, value]) =>
+                                    `**${key}:** <@&${value}>`
+                            )
+                            .join("\n")
+                        : "_None set — use /setrole_";
 
                 const embed =
                     new EmbedBuilder()
@@ -1028,19 +1163,14 @@ client.on(
                             "⚙️ CVP Notifier Settings"
                         )
                         .setDescription(
-                            `**Channel:** ${
-                                cfg.channelId
-                                    ? `<#${cfg.channelId}>`
+                            `**Notification Channel:** ${
+                                config.channelId
+                                    ? `<#${config.channelId}>`
                                     : "_Not set — use /setchannel_"
                             }\n\n` +
-                            `**Ping roles:**\n${
-                                roleLines ||
-                                "_None set — use /setrole_"
-                            }`
+                            `**Ping Roles:**\n${roleLines}`
                         )
-                        .setColor(
-                            0x2b2d31
-                        );
+                        .setColor(0x2b2d31);
 
                 return interaction.reply({
                     embeds: [embed],
@@ -1048,11 +1178,11 @@ client.on(
                 });
             }
 
-        } catch (err) {
+        } catch (error) {
 
             console.error(
-                "Interaction error:",
-                err
+                `❌ Error handling /${interaction.commandName}:`,
+                error
             );
 
             const message =
@@ -1060,7 +1190,10 @@ client.on(
 
             try {
 
-                if (interaction.deferred) {
+                if (
+                    interaction.deferred ||
+                    interaction.replied
+                ) {
 
                     await interaction.editReply({
                         content: message
@@ -1077,7 +1210,7 @@ client.on(
             } catch (replyError) {
 
                 console.error(
-                    "Failed to send error response:",
+                    "❌ Failed to send error response:",
                     replyError
                 );
             }
@@ -1094,8 +1227,9 @@ let lastState = {
     eggShop: {},
     gearShop: {},
     merchantName: null,
-    weather: null
+    weather: null,
 
+    initialized: false
 };
 
 // ============================================================
@@ -1107,15 +1241,15 @@ async function broadcast(
     embed
 ) {
 
-    const guilds =
+    const guildConfigs =
         db.allGuildConfigs();
 
     for (
-        const [guildId, cfg]
-        of Object.entries(guilds)
+        const [guildId, config]
+        of Object.entries(guildConfigs)
     ) {
 
-        if (!cfg.channelId) {
+        if (!config.channelId) {
             continue;
         }
 
@@ -1123,7 +1257,7 @@ async function broadcast(
 
             const channel =
                 await client.channels.fetch(
-                    cfg.channelId
+                    config.channelId
                 );
 
             if (!channel) {
@@ -1131,8 +1265,8 @@ async function broadcast(
             }
 
             const roleId =
-                cfg.roles &&
-                cfg.roles[eventType];
+                config.roles &&
+                config.roles[eventType];
 
             await channel.send({
 
@@ -1141,7 +1275,9 @@ async function broadcast(
                         ? `<@&${roleId}>`
                         : undefined,
 
-                embeds: [embed],
+                embeds: [
+                    embed
+                ],
 
                 components: [
                     buildLinkButtons()
@@ -1153,14 +1289,17 @@ async function broadcast(
                             ? [roleId]
                             : []
                 }
-
             });
 
-        } catch (err) {
+            console.log(
+                `📢 Sent ${eventType} notification to ${guildId}`
+            );
+
+        } catch (error) {
 
             console.error(
-                `Failed to notify guild ${guildId}:`,
-                err.message
+                `❌ Failed to notify guild ${guildId}:`,
+                error.message
             );
         }
     }
@@ -1179,24 +1318,86 @@ async function pollOnce() {
         data =
             await fetchStatus();
 
-    } catch (err) {
+    } catch (error) {
 
         console.error(
-            "Poll failed:",
-            err.message
+            "❌ Poll failed:",
+            error.message
         );
 
         return;
     }
 
-    // --------------------------------------------------------
+    // ========================================================
+    // INITIALIZE STATE
+    // ========================================================
+
+    // The first poll establishes the current state.
+    // It does NOT send fake "restocked" notifications.
+
+    if (!lastState.initialized) {
+
+        console.log(
+            "📊 Initializing stock state..."
+        );
+
+        for (
+            const key
+            of [
+                "eggShop",
+                "gearShop"
+            ]
+        ) {
+
+            const items =
+                normalizeStockList(
+                    data[key]
+                );
+
+            for (
+                const item
+                of items
+            ) {
+
+                lastState[key][item.name] =
+                    stockIsAvailable(
+                        item.stock
+                    );
+            }
+        }
+
+        const merchant =
+            normalizeMerchant(
+                data.merchant
+            );
+
+        lastState.merchantName =
+            merchant
+                ? merchant.name
+                : null;
+
+        lastState.weather =
+            normalizeWeather(
+                data.weather
+            );
+
+        lastState.initialized = true;
+
+        console.log(
+            "✅ Initial state established."
+        );
+
+        return;
+    }
+
+    // ========================================================
     // EGG SHOP + GEAR SHOP
-    // --------------------------------------------------------
+    // ========================================================
 
     for (
         const [
             key,
-            shopTitle,
+            title,
             icon,
             eventType
         ]
@@ -1255,9 +1456,13 @@ async function pollOnce() {
             newlyInStock.length > 0
         ) {
 
+            console.log(
+                `🛒 ${eventType}: ${newlyInStock.length} item(s) restocked`
+            );
+
             const embed =
                 buildStockEmbed(
-                    shopTitle,
+                    title,
                     newlyInStock,
                     {
                         icon,
@@ -1273,9 +1478,9 @@ async function pollOnce() {
         }
     }
 
-    // --------------------------------------------------------
-    // TRAVELING MERCHANT
-    // --------------------------------------------------------
+    // ========================================================
+    // MERCHANT
+    // ========================================================
 
     const merchant =
         normalizeMerchant(
@@ -1293,6 +1498,10 @@ async function pollOnce() {
             lastState.merchantName
     ) {
 
+        console.log(
+            `🚚 New merchant detected: ${merchantName}`
+        );
+
         await broadcast(
             "merchant",
             buildMerchantEmbed(
@@ -1305,9 +1514,9 @@ async function pollOnce() {
     lastState.merchantName =
         merchantName;
 
-    // --------------------------------------------------------
+    // ========================================================
     // WEATHER
-    // --------------------------------------------------------
+    // ========================================================
 
     const weather =
         normalizeWeather(
@@ -1316,8 +1525,13 @@ async function pollOnce() {
 
     if (
         weather &&
-        weather !== lastState.weather
+        weather !==
+            lastState.weather
     ) {
+
+        console.log(
+            `🌦️ Weather changed: ${weather}`
+        );
 
         await broadcast(
             "weather",
@@ -1333,19 +1547,24 @@ async function pollOnce() {
 }
 
 // ============================================================
-// BOT READY
+// READY
 // ============================================================
 
 client.once(
     "ready",
     async () => {
 
+        console.log("");
+        console.log("==========================================");
+        console.log("🤖 CAPYBARAS VS PLANTS DISCORD BOT");
+        console.log("==========================================");
+
         console.log(
-            "=========================================="
+            `🤖 Logged in as: ${client.user.tag}`
         );
 
         console.log(
-            `🤖 Logged in as ${client.user.tag}`
+            `🆔 Client ID: ${CLIENT_ID}`
         );
 
         console.log(
@@ -1357,24 +1576,134 @@ client.once(
         );
 
         console.log(
-            "=========================================="
+            `🏠 Guilds: ${client.guilds.cache.size}`
         );
 
-        // Register slash commands automatically
+        for (
+            const guild
+            of client.guilds.cache.values()
+        ) {
+
+            console.log(
+                `   • ${guild.name} (${guild.id})`
+            );
+        }
+
+        console.log("==========================================");
+
+        // ----------------------------------------------------
+        // REGISTER COMMANDS
+        // ----------------------------------------------------
+
         await registerCommands();
 
-        // Initial API check
+        // ----------------------------------------------------
+        // INITIAL API CHECK
+        // ----------------------------------------------------
+
+        console.log(
+            "🔍 Checking CVP API..."
+        );
+
+        try {
+
+            const data =
+                await fetchStatus();
+
+            console.log(
+                "✅ CVP API is responding."
+            );
+
+            console.log(
+                `📦 Egg Shop: ${
+                    normalizeStockList(
+                        data.eggShop
+                    ).length
+                } items`
+            );
+
+            console.log(
+                `⚙️ Gear Shop: ${
+                    normalizeStockList(
+                        data.gearShop
+                    ).length
+                } items`
+            );
+
+        } catch (error) {
+
+            console.error(
+                "⚠️ CVP API check failed:",
+                error.message
+            );
+        }
+
+        // ----------------------------------------------------
+        // INITIAL POLL
+        // ----------------------------------------------------
+
         await pollOnce();
 
-        // Continue polling
+        // ----------------------------------------------------
+        // CONTINUOUS POLLING
+        // ----------------------------------------------------
+
         setInterval(
             pollOnce,
             POLL_INTERVAL_MS
         );
 
+        console.log("");
+        console.log("==========================================");
+        console.log("✅ CVP DISCORD BOT IS FULLY RUNNING");
+        console.log("==========================================");
+        console.log("");
+    }
+);
+
+// ============================================================
+// GUILD JOIN
+// ============================================================
+
+client.on(
+    "guildCreate",
+    async guild => {
+
         console.log(
-            "✅ CVP automatic notifier is running."
+            `➕ Bot joined new guild: ${guild.name} (${guild.id})`
         );
+
+        // Automatically register commands for the new server.
+        try {
+
+            const rest =
+                new REST({
+                    version: "10"
+                }).setToken(
+                    DISCORD_TOKEN
+                );
+
+            await rest.put(
+                Routes.applicationGuildCommands(
+                    CLIENT_ID,
+                    guild.id
+                ),
+                {
+                    body: commands
+                }
+            );
+
+            console.log(
+                `✅ Commands registered in ${guild.name}`
+            );
+
+        } catch (error) {
+
+            console.error(
+                `❌ Could not register commands in ${guild.name}:`,
+                error.message
+            );
+        }
     }
 );
 
@@ -1382,6 +1711,19 @@ client.once(
 // LOGIN
 // ============================================================
 
+console.log("🔑 Logging into Discord...");
+
 client.login(
     DISCORD_TOKEN
-);
+).catch(error => {
+
+    console.error(
+        "❌ Discord login failed:"
+    );
+
+    console.error(
+        error
+    );
+
+    process.exit(1);
+});
