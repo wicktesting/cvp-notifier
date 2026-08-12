@@ -5,6 +5,7 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 3000;
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 // Latest information received from the game
 let latestData = {
@@ -17,6 +18,135 @@ let latestData = {
 };
 
 // ========================================
+// DISCORD
+// ========================================
+
+async function sendDiscordMessage(content) {
+    if (!DISCORD_WEBHOOK_URL) {
+        console.log("DISCORD_WEBHOOK_URL is not configured.");
+        return false;
+    }
+
+    try {
+        const response = await fetch(DISCORD_WEBHOOK_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                content: content
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+
+            console.error(
+                "Discord webhook failed:",
+                response.status,
+                errorText
+            );
+
+            return false;
+        }
+
+        console.log("Discord notification sent.");
+        return true;
+
+    } catch (error) {
+        console.error("Discord webhook error:", error);
+        return false;
+    }
+}
+
+// ========================================
+// FORMAT STOCK
+// ========================================
+
+function formatStock(stock) {
+    let result = "";
+
+    for (const [item, amount] of Object.entries(stock || {})) {
+        if (Number(amount) > 0) {
+            result += `🟢 ${item} ×${amount}\n`;
+        } else {
+            result += `🔴 ${item} — OUT OF STOCK\n`;
+        }
+    }
+
+    return result || "No stock data.";
+}
+
+// ========================================
+// FORMAT MERCHANT
+// ========================================
+
+function formatTime(seconds) {
+    seconds = Number(seconds) || 0;
+
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+}
+
+// ========================================
+// BUILD NOTIFICATION
+// ========================================
+
+function buildNotification(data) {
+    let message = "";
+
+    message += "🌱 **CAPYBARAS VS PLANTS**\n";
+    message += "━━━━━━━━━━━━━━━━━━━━\n\n";
+
+    // Egg Shop
+    message += "🥚 **EGG SHOP**\n";
+    message += formatStock(data.eggShop);
+    message += "\n";
+
+    // Gear Shop
+    message += "⚙️ **GEAR SHOP**\n";
+    message += formatStock(data.gearShop);
+    message += "\n";
+
+    // Merchant
+    if (data.merchant && Object.keys(data.merchant).length > 0) {
+        message += `🧑‍🌾 **TRAVELING MERCHANT — ${
+            data.merchant.name || "Unknown"
+        }**\n`;
+
+        message += formatStock(data.merchant.items);
+
+        if (data.merchant.remainingSeconds !== undefined) {
+            message += `⏱️ Leaves in **${formatTime(
+                data.merchant.remainingSeconds
+            )}**\n`;
+        }
+
+        message += "\n";
+    }
+
+    // Weather
+    if (data.weather && data.weather.name) {
+        message += `🌦️ **WEATHER — ${data.weather.name}**\n`;
+
+        if (data.weather.duration !== undefined) {
+            message += `⏱️ Duration: **${formatTime(
+                data.weather.duration
+            )}**\n`;
+        }
+
+        message += "\n";
+    }
+
+    message += "━━━━━━━━━━━━━━━━━━━━\n";
+    message += "🤖 CVP Notifier";
+
+    return message;
+}
+
+// ========================================
 // HEALTH CHECK
 // ========================================
 
@@ -24,7 +154,8 @@ app.get("/", (req, res) => {
     res.json({
         online: true,
         service: "Capybaras vs Plants Notifier",
-        version: "1.0.0"
+        version: "1.0.0",
+        discordConfigured: !!DISCORD_WEBHOOK_URL
     });
 });
 
@@ -32,7 +163,7 @@ app.get("/", (req, res) => {
 // RECEIVE GAME DATA
 // ========================================
 
-app.post("/api/update", (req, res) => {
+app.post("/api/update", async (req, res) => {
     const data = req.body;
 
     latestData = {
@@ -54,7 +185,7 @@ app.post("/api/update", (req, res) => {
 });
 
 // ========================================
-// GET CURRENT GAME DATA
+// GET CURRENT DATA
 // ========================================
 
 app.get("/api/status", (req, res) => {
@@ -65,10 +196,11 @@ app.get("/api/status", (req, res) => {
 });
 
 // ========================================
-// TEST NOTIFICATION
+// DISCORD TEST
 // ========================================
 
-app.get("/api/test", (req, res) => {
+app.get("/api/test", async (req, res) => {
+
     const testData = {
         game: "Capybaras vs Plants",
 
@@ -109,8 +241,13 @@ app.get("/api/test", (req, res) => {
         }
     };
 
+    const message = buildNotification(testData);
+
+    const sent = await sendDiscordMessage(message);
+
     res.json({
         success: true,
+        discordSent: sent,
         notification: testData
     });
 });
@@ -123,5 +260,9 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log("=================================");
     console.log("CVP NOTIFIER ONLINE");
     console.log("Port:", PORT);
+    console.log(
+        "Discord configured:",
+        !!DISCORD_WEBHOOK_URL
+    );
     console.log("=================================");
 });
