@@ -15,3 +15,7 @@
     "node-fetch": "^2.7.0"
   }
 }
+"scripts": {
+  "start": "node bot.js",
+  "deploy-commands": "node deploy-commands.js"
+}
