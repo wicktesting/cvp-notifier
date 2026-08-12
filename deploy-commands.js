@@ -56,7 +56,31 @@ const commands = [
     new SlashCommandBuilder()
         .setName("setchannel")
         .setDescription(
-            "Set the channel where automatic stock notifications are posted"
+            "Set the channel for a specific notification type"
+        )
+        .addStringOption((option) =>
+            option
+                .setName("event")
+                .setDescription("Notification type")
+                .setRequired(true)
+                .addChoices(
+                    {
+                        name: "Egg Shop",
+                        value: "eggShop"
+                    },
+                    {
+                        name: "Gear Shop",
+                        value: "gearShop"
+                    },
+                    {
+                        name: "Traveling Merchant",
+                        value: "merchant"
+                    },
+                    {
+                        name: "Weather",
+                        value: "weather"
+                    }
+                )
         )
         .addChannelOption((option) =>
             option
