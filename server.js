@@ -52,13 +52,27 @@ app.post("/api/update", (req, res) => {
 
   const body = req.body || {};
 
+  // `false` means the script explicitly confirmed "nothing here right
+  // now" (e.g. no merchant) and should clear the field. A field that's
+  // just missing from the request (undefined) means this update didn't
+  // touch it, so the old value is kept.
+  function resolveField(incoming, previous) {
+    if (incoming === false) {
+      return null;
+    }
+    if (incoming === undefined) {
+      return previous;
+    }
+    return incoming;
+  }
+
   latestData = {
     updatedAt: new Date().toISOString(),
     game: body.game || latestData.game,
     eggShop: body.eggShop !== undefined ? body.eggShop : latestData.eggShop,
     gearShop: body.gearShop !== undefined ? body.gearShop : latestData.gearShop,
-    merchant: body.merchant !== undefined ? body.merchant : latestData.merchant,
-    weather: body.weather !== undefined ? body.weather : latestData.weather,
+    merchant: resolveField(body.merchant, latestData.merchant),
+    weather: resolveField(body.weather, latestData.weather),
   };
 
   res.json({ success: true, updatedAt: latestData.updatedAt });
