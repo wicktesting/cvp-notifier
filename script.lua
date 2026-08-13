@@ -19,7 +19,7 @@ local API_URL = "https://cvp-notifier-production.up.railway.app/api/update"
 
 local API_KEY = ""
 
-local SCAN_EVERY = 30
+local SCAN_EVERY = 5
 
 -- ================================================================
 -- CLEAN OLD GUI
