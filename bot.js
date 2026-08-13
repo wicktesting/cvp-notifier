@@ -457,7 +457,7 @@ function updatedFooterText(updatedAt) {
         return null;
     }
 
-    return `🕒 Updated <t:${timestamp}:R>`;
+    return `Updated <t:${timestamp}:R>`;
 }
 
 // ============================================================
@@ -492,11 +492,11 @@ function restockFooterText(
     if (showRestockTimer) {
 
         lines.push(
-            `🔁 Restocks every ${intervalMinutes} minutes`
+            `Restocks every ${intervalMinutes} minutes`
         );
 
         lines.push(
-            `⏳ Next restock <t:${nextRestockUnix(intervalMinutes)}:R>`
+            `Next restock <t:${nextRestockUnix(intervalMinutes)}:R>`
         );
     }
 
@@ -700,6 +700,7 @@ function buildStockEmbed(
         );
 
     let description = "";
+    let lineCount = 0;
 
     if (inStock.length > 0) {
 
@@ -720,10 +721,33 @@ function buildStockEmbed(
                 })
                 .join("\n");
 
+        lineCount = inStock.length;
+
     } else {
 
         description =
             "_Nothing in stock right now._";
+
+        lineCount = 1;
+    }
+
+    // Pad with invisible lines (zero-width space) so the embed
+    // is always the same height, whether 1 item or all of them
+    // are in stock — the hidden items stay hidden, only the
+    // blank space is added back in.
+    const padCount =
+        Math.max(
+            0,
+            items.length - lineCount
+        );
+
+    if (padCount > 0) {
+
+        description +=
+            "\n" +
+            Array(padCount)
+                .fill("\u200B")
+                .join("\n");
     }
 
     const footer =
@@ -774,14 +798,14 @@ function buildMerchantEmbed(
         }
 
         return new EmbedBuilder()
-            .setTitle("🚚 Traveling Merchant")
+            .setTitle("Traveling Merchant")
             .setDescription(description)
             .setColor(0x2b2d31);
     }
 
     const lines =
         merchant.items.map(item =>
-            `🛍️ **${item.name}** ${formatStockBadge(item.stock)}`
+            `**${item.name}** ${formatStockBadge(item.stock)}`
         );
 
     let description = "";
@@ -807,7 +831,7 @@ function buildMerchantEmbed(
 
     return new EmbedBuilder()
         .setTitle(
-            `🚚 Traveling Merchant: ${merchant.name}`
+            `Traveling Merchant: ${merchant.name}`
         )
         .setDescription(description)
         .setColor(0xf59e0b);
@@ -825,7 +849,7 @@ function buildWeatherEmbed(
     if (!weather) {
 
         return new EmbedBuilder()
-            .setTitle("🌦️ Weather")
+            .setTitle("Weather")
             .setDescription(
                 "No weather data available right now."
             )
@@ -846,7 +870,7 @@ function buildWeatherEmbed(
     const embed =
         new EmbedBuilder()
             .setTitle(
-                `🌦️ Current Weather: ${weather}`
+                `Current Weather: ${weather}`
             )
             .setColor(
                 info && info.color
@@ -929,12 +953,12 @@ client.on(
 
                 const embed =
                     buildStockEmbed(
-                        "🥚 The Egg Shop",
+                        "The Egg Shop",
                         normalizeStockList(
                             data.eggShop
                         ),
                         {
-                            icon: "🥚",
+                            icon: "•",
                             updatedAt:
                                 data.updatedAt
                         }
@@ -964,12 +988,12 @@ client.on(
 
                 const embed =
                     buildStockEmbed(
-                        "⚙️ The Gear Shop",
+                        "The Gear Shop",
                         normalizeStockList(
                             data.gearShop
                         ),
                         {
-                            icon: "⚙️",
+                            icon: "•",
                             updatedAt:
                                 data.updatedAt
                         }
@@ -1060,24 +1084,24 @@ client.on(
                 const embeds = [
 
                     buildStockEmbed(
-                        "🥚 The Egg Shop",
+                        "The Egg Shop",
                         normalizeStockList(
                             data.eggShop
                         ),
                         {
-                            icon: "🥚",
+                            icon: "•",
                             updatedAt:
                                 data.updatedAt
                         }
                     ),
 
                     buildStockEmbed(
-                        "⚙️ The Gear Shop",
+                        "The Gear Shop",
                         normalizeStockList(
                             data.gearShop
                         ),
                         {
-                            icon: "⚙️",
+                            icon: "•",
                             updatedAt:
                                 data.updatedAt
                         }
@@ -1258,7 +1282,7 @@ client.on(
                 const embed =
                     new EmbedBuilder()
                         .setTitle(
-                            "⚙️ CVP Notifier Settings"
+                            "CVP Notifier Settings"
                         )
                         .setDescription(
                             `**Notification Channels:**\n${channelLines}\n\n` +
@@ -1564,12 +1588,12 @@ async function broadcastFullShopStock() {
 
     const eggEmbed =
         buildStockEmbed(
-            "🥚 The Egg Shop has been restocked!",
+            "The Egg Shop has been restocked!",
             normalizeStockList(
                 data.eggShop
             ),
             {
-                icon: "🥚",
+                icon: "•",
                 updatedAt:
                     data.updatedAt
             }
@@ -1582,12 +1606,12 @@ async function broadcastFullShopStock() {
 
     const gearEmbed =
         buildStockEmbed(
-            "⚙️ The Gear Shop has been restocked!",
+            "The Gear Shop has been restocked!",
             normalizeStockList(
                 data.gearShop
             ),
             {
-                icon: "⚙️",
+                icon: "•",
                 updatedAt:
                     data.updatedAt
             }
