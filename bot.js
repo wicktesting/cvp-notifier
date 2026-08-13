@@ -796,13 +796,22 @@ function buildStockEmbed(
     }
 
     // Pad with invisible lines (zero-width space) so the embed
-    // is always the same height, whether 1 item or all of them
-    // are in stock — the hidden items stay hidden, only the
-    // blank space is added back in.
+    // is a consistent size regardless of how many items are in
+    // stock — capped at a smaller target than the full catalog
+    // (e.g. 6, not all 9 eggs) so the gap doesn't get excessive
+    // when only a couple items are in stock. On the rare occasion
+    // more than the target are in stock at once, the embed just
+    // grows slightly that one time instead of clipping anything.
+    const targetLines =
+        Math.min(
+            items.length,
+            options.targetLines || 6
+        );
+
     const padCount =
         Math.max(
             0,
-            items.length - lineCount
+            targetLines - lineCount
         );
 
     if (padCount > 0) {
@@ -1703,10 +1712,10 @@ async function broadcastFullShopStock() {
 }
 
 // How long after the exact xx:00/xx:05 mark to wait before
-// broadcasting — gives the in-game script's scan (which runs
-// every 30s) time to pick up the fresh stock and POST it to
+// broadcasting — gives the in-game script's scan (which now runs
+// every 5s) time to pick up the fresh stock and POST it to
 // the API first, so the broadcast isn't sent with stale data.
-const RESTOCK_BROADCAST_DELAY_MS = 20 * 1000;
+const RESTOCK_BROADCAST_DELAY_MS = 8 * 1000;
 
 function scheduleRestockBroadcast(intervalMinutes = 5) {
 
