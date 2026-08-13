@@ -2,8 +2,26 @@ const low = require("lowdb");
 const FileSync = require("lowdb/adapters/FileSync");
 const path = require("path");
 
-const adapter = new FileSync(path.join(__dirname, "db.json"));
+// If DB_PATH is set (pointing at a mounted Railway Volume, e.g.
+// /data/db.json), settings survive redeploys. Otherwise this
+// falls back to a file next to the code, which Railway WIPES on
+// every redeploy — fine for quick local testing, but you'll lose
+// /setchannel and /setrole settings every time you push a change.
+const dbFilePath =
+    process.env.DB_PATH ||
+    path.join(__dirname, "db.json");
+
+const adapter = new FileSync(dbFilePath);
 const db = low(adapter);
+
+console.log(
+    `💾 Settings storage: ${dbFilePath}` +
+    (
+        process.env.DB_PATH
+            ? " (persistent volume)"
+            : " (⚠️ NOT persistent — wiped on redeploy, set DB_PATH to fix)"
+    )
+);
 
 // Structure:
 // guilds: {
