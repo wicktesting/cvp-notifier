@@ -578,6 +578,7 @@ function restockFooterText(
     return lines.join("\n");
 }
 
+
 // ============================================================
 // NORMALIZE STOCK
 // ============================================================
@@ -857,6 +858,49 @@ function buildStockEmbed(
 }
 
 // ============================================================
+// MERCHANT SCHEDULE
+//
+// The Traveling Merchant runs on a fixed real-world clock, not
+// something that needs to be scanned/guessed: shows up right at
+// xx:00 / xx:20 / xx:40, stays for 10 minutes, then is gone for
+// the next 10 minutes, repeating forever. Since this is 100%
+// predictable, we compute it directly instead of depending on
+// (fragile) in-game text scanning for the countdown.
+// ============================================================
+
+const MERCHANT_CYCLE_MINUTES = 20;
+const MERCHANT_ACTIVE_MINUTES = 10;
+
+function merchantSchedule() {
+
+    const epochMinutes =
+        Math.floor(
+            Date.now() / 60000
+        );
+
+    const cyclePos =
+        epochMinutes % MERCHANT_CYCLE_MINUTES;
+
+    const isActive =
+        cyclePos < MERCHANT_ACTIVE_MINUTES;
+
+    const minutesUntilChange =
+        isActive
+            ? MERCHANT_ACTIVE_MINUTES - cyclePos
+            : MERCHANT_CYCLE_MINUTES - cyclePos;
+
+    const changeAtUnix =
+        Math.floor(
+            (epochMinutes + minutesUntilChange) * 60
+        );
+
+    return {
+        isActive,
+        changeAtUnix
+    };
+}
+
+// ============================================================
 // MERCHANT EMBED
 // ============================================================
 
@@ -865,10 +909,22 @@ function buildMerchantEmbed(
     updatedAt = null
 ) {
 
+    const schedule =
+        merchantSchedule();
+
     if (!merchant) {
 
         let description =
-            "No merchant is currently here.";
+            schedule.isActive
+
+                // The clock says the merchant SHOULD be active
+                // right now, but scanning didn't detect one —
+                // most likely the scanner just hasn't caught up
+                // yet (or its item/name list needs updating).
+                ? "The merchant should be here right now, but wasn't detected in the last scan.\n\n" +
+                  `**Leaves:** <t:${schedule.changeAtUnix}:R>`
+
+                : `**Next merchant:** <t:${schedule.changeAtUnix}:R>`;
 
         const footer =
             updatedFooterText(updatedAt);
@@ -892,13 +948,8 @@ function buildMerchantEmbed(
         );
 
     let description =
-        `# Traveling Merchant: ${merchant.name}\n\n`;
-
-    if (merchant.timeLeft) {
-
-        description +=
-            `**Leaves in:** ${merchant.timeLeft}\n\n`;
-    }
+        `# Traveling Merchant: ${merchant.name}\n\n` +
+        `**Leaves:** <t:${schedule.changeAtUnix}:R>\n\n`;
 
     description +=
         lines.length > 0
