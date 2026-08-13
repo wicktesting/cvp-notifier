@@ -538,6 +538,8 @@ local function scanMerchant()
 
     local toggle = MainGui:FindFirstChild("ToggleMerchantShopFrame", true)
 
+    local forceShown = {}
+
     if toggle and toggle:IsA("BindableEvent") then
 
         pcall(function()
@@ -545,6 +547,51 @@ local function scanMerchant()
         end)
 
         task.wait(0.5)
+
+    else
+
+        -- The toggle instance wasn't found by that exact name.
+        -- If nothing opens the merchant panel, we'd just be
+        -- re-scanning whatever text happens to still be sitting
+        -- in the GUI from before — which looks exactly like
+        -- "stuck on the same result" even though the real
+        -- in-game merchant has changed.
+
+        warn("[CVP] ToggleMerchantShopFrame not found — merchant panel likely isn't opening. Trying a fallback scan...")
+
+        for _, object in ipairs(MainGui:GetDescendants()) do
+
+            local isFrameLike =
+                object:IsA("Frame")
+                or object:IsA("CanvasGroup")
+
+            if isFrameLike
+                and object.Name:lower():find("merchant")
+                and object.Visible == false then
+
+                local ok = pcall(function()
+                    object.Visible = true
+                end)
+
+                if ok then
+                    table.insert(forceShown, object)
+                end
+
+            end
+
+        end
+
+        if #forceShown > 0 then
+
+            print("[CVP] Fallback: force-opened " .. #forceShown .. " merchant-related frame(s)")
+
+            task.wait(0.5)
+
+        else
+
+            warn("[CVP] Fallback found nothing named *Merchant* either — the merchant frame's real name is needed to fix this properly.")
+
+        end
 
     end
 
@@ -598,6 +645,31 @@ local function scanMerchant()
         end
 
     end
+
+    -- Put back any frames we force-opened via the fallback,
+    -- so we don't leave random panels stuck open in-game.
+    for _, object in ipairs(forceShown) do
+
+        pcall(function()
+            object.Visible = false
+        end)
+
+    end
+
+    print(
+        "[CVP] Merchant scan result — name: " ..
+        tostring(result.name) ..
+        ", items found: " ..
+        tostring(
+            (function()
+                local n = 0
+                for _ in pairs(result.items) do
+                    n += 1
+                end
+                return n
+            end)()
+        )
+    )
 
     if not result.name
         and not next(result.items) then
@@ -775,9 +847,16 @@ local function runScan()
 
         gearShop = gearShop,
 
-        merchant = merchant,
+        -- IMPORTANT: use `or false` here, not just `merchant`.
+        -- If merchant is Lua nil, JSONEncode DROPS the key
+        -- entirely instead of sending null — the API can't then
+        -- tell "no merchant right now" apart from "this update
+        -- just didn't mention merchant", and keeps showing the
+        -- OLD merchant forever. Sending false is explicit and
+        -- survives JSON encoding.
+        merchant = merchant or false,
 
-        weather = weather
+        weather = weather or false
 
     }
 
