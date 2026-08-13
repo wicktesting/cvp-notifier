@@ -448,27 +448,35 @@ function buildLinkButtons() {
 const ITEM_EMOJIS = {
 
     // Eggs
-    "Capybara Egg": "",
-    "Alpha Capybara Egg": "",
-    "Archer Capybara Egg": "",
-    "Magic Capybara Egg": "",
-    "Ghost Capybara Egg": "",
-    "Golem Capybara Egg": "",
-    "Robot Capybara Egg": "",
-    "Disco Capybara Egg": "",
-    "Angel Capybara Egg": "",
+    "Capybara Egg": "<:CapyEgg:1537417025566023730>",
+    "Alpha Capybara Egg": "<:AlphaEgg:1537417006557692004>",
+    "Archer Capybara Egg": "<:ArcherEgg:1537417013503467590>",
+    "Magic Capybara Egg": "<:MagicCapE:1537417289476083722>",
+    "Ghost Capybara Egg": "<:GhostEgg:1537417019425558578>",
+    "Golem Capybara Egg": "<:GolemEgg:1537417082646298675>",
+    "Robot Capybara Egg": "<:RobotEgg:1537417089802047488>",
+    "Disco Capybara Egg": "<:DiscoEgg:1537417132537679924>",
+    "Angel Capybara Egg": "<:AngelEgg:1537417121775222945>",
 
     // Gear
-    "Hatch Hammer": "",
-    "Nametag": "",
-    "Mutation Sponge": "",
-    "Boombox": "",
-    "Bizarre Stopwatch": "",
+    "Hatch Hammer": "<:HatchHam:1537417831468236943>",
+    "Nametag": "<:Rename:1537417870915543071>",
+    "Mutation Sponge": "<:CVPSponge:1537417823914041385>",
+    "Boombox": "<:Boombox:1537417707153264820>",
+    "Bizarre Stopwatch": "<:BStopwatch:1537417698844352593>",
 
-    // Merchant items
-    "Gilded Hatch Hammer": "",
-    "Gold Scroll": "",
-    "Totem Of Status": ""
+    // Merchant items (King Capybara)
+    "Gilded Hatch Hammer": "<:GHHammer:1537417996275028108>",
+    "Gold Scroll": "<:GoldScroll:1537418388840648815>",
+    "Totem Of Status": "<:ToStatus:1537417977501065236>"
+
+    // NOTE: Martian, Timbles, and Jester each sell their own
+    // separate item sets (Raygun, Alien Tesla, Totem of Stars,
+    // Totem of Might, Totem of Marrow, Rainbow Scroll, Moonlit,
+    // Chilly, Toasty, Tranquil, Shocked, Glitched) — you have
+    // emojis for these too, but they're not in script.lua's
+    // MerchantItems list yet, so the scanner can't detect them
+    // in-game. See note below before these will work.
 };
 
 function itemIcon(name, fallback = "•") {
