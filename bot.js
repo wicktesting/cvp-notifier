@@ -422,6 +422,67 @@ function buildLinkButtons() {
 // STOCK HELPERS
 // ============================================================
 
+// ============================================================
+// PER-ITEM ICONS
+//
+// Discord embeds can't show a unique inline image next to each
+// line of text — the only way to get a real per-item "photo" is
+// a CUSTOM SERVER EMOJI, which Discord renders inline as a small
+// icon wherever you reference it as <:name:id> in text.
+//
+// How to fill this in:
+//   1. Server Settings → Emoji → Upload Emoji (one per item,
+//      square PNG with transparent background works best,
+//      Discord will resize it automatically)
+//   2. In any channel, type a backslash then the emoji, e.g.
+//      \:capybaraegg:  and send it — Discord replies with the
+//      raw code, e.g. <:capybaraegg:1234567890123456789>
+//   3. Paste that whole code as the value below, matching the
+//      exact item name used in your game/API data (left side).
+//
+// Anything left as "" just falls back to a plain bullet — no
+// crash, no missing-icon error, it just won't have a custom
+// icon yet.
+// ============================================================
+
+const ITEM_EMOJIS = {
+
+    // Eggs
+    "Capybara Egg": "",
+    "Alpha Capybara Egg": "",
+    "Archer Capybara Egg": "",
+    "Magic Capybara Egg": "",
+    "Ghost Capybara Egg": "",
+    "Golem Capybara Egg": "",
+    "Robot Capybara Egg": "",
+    "Disco Capybara Egg": "",
+    "Angel Capybara Egg": "",
+
+    // Gear
+    "Hatch Hammer": "",
+    "Nametag": "",
+    "Mutation Sponge": "",
+    "Boombox": "",
+    "Bizarre Stopwatch": "",
+
+    // Merchant items
+    "Gilded Hatch Hammer": "",
+    "Gold Scroll": "",
+    "Totem Of Status": ""
+};
+
+function itemIcon(name, fallback = "•") {
+
+    const emoji =
+        ITEM_EMOJIS[name];
+
+    return (
+        emoji && emoji.trim() !== ""
+            ? emoji
+            : fallback
+    );
+}
+
 function formatStockBadge(stock) {
 
     if (
@@ -680,13 +741,16 @@ function buildStockEmbed(
     } = options;
 
     const embed =
-        new EmbedBuilder()
-            .setTitle(title);
+        new EmbedBuilder();
+
+    const heading =
+        `# ${title}\n\n`;
 
     if (items.length === 0) {
 
         embed
             .setDescription(
+                heading +
                 "No data available right now."
             )
             .setColor(colorFallback);
@@ -699,7 +763,7 @@ function buildStockEmbed(
             stockIsAvailable(item.stock)
         );
 
-    let description = "";
+    let description = heading;
     let lineCount = 0;
 
     if (inStock.length > 0) {
@@ -709,7 +773,7 @@ function buildStockEmbed(
                 .map(item => {
 
                     let line =
-                        `${icon} **${item.name}** ${formatStockBadge(item.stock)}`;
+                        `${itemIcon(item.name, icon)} **${item.name}** ${formatStockBadge(item.stock)}`;
 
                     if (item.rarity) {
                         line +=
@@ -798,17 +862,20 @@ function buildMerchantEmbed(
         }
 
         return new EmbedBuilder()
-            .setTitle("Traveling Merchant")
-            .setDescription(description)
+            .setDescription(
+                "# Traveling Merchant\n\n" +
+                description
+            )
             .setColor(0x2b2d31);
     }
 
     const lines =
         merchant.items.map(item =>
-            `**${item.name}** ${formatStockBadge(item.stock)}`
+            `${itemIcon(item.name)} **${item.name}** ${formatStockBadge(item.stock)}`
         );
 
-    let description = "";
+    let description =
+        `# Traveling Merchant: ${merchant.name}\n\n`;
 
     if (merchant.timeLeft) {
 
@@ -830,9 +897,6 @@ function buildMerchantEmbed(
     }
 
     return new EmbedBuilder()
-        .setTitle(
-            `Traveling Merchant: ${merchant.name}`
-        )
         .setDescription(description)
         .setColor(0xf59e0b);
 }
@@ -849,8 +913,8 @@ function buildWeatherEmbed(
     if (!weather) {
 
         return new EmbedBuilder()
-            .setTitle("Weather")
             .setDescription(
+                "# Weather\n\n" +
                 "No weather data available right now."
             )
             .setColor(0x2b2d31);
@@ -869,9 +933,6 @@ function buildWeatherEmbed(
 
     const embed =
         new EmbedBuilder()
-            .setTitle(
-                `Current Weather: ${weather}`
-            )
             .setColor(
                 info && info.color
                     ? info.color
@@ -879,9 +940,12 @@ function buildWeatherEmbed(
             );
 
     let description =
-        info && info.description
-            ? info.description
-            : "";
+        `# Current Weather: ${weather}\n\n` +
+        (
+            info && info.description
+                ? info.description
+                : ""
+        );
 
     if (
         info &&
@@ -1360,6 +1424,16 @@ async function broadcast(
     const guildConfigs =
         db.allGuildConfigs();
 
+    if (Object.keys(guildConfigs).length === 0) {
+
+        console.warn(
+            `⚠️ broadcast(${eventType}): no guild settings saved at all. ` +
+            `Has /setchannel been run since the last redeploy?`
+        );
+
+        return;
+    }
+
     for (
         const [guildId, config]
         of Object.entries(guildConfigs)
@@ -1370,6 +1444,11 @@ async function broadcast(
             config.channels[eventType];
 
         if (!channelId) {
+
+            console.log(
+                `ℹ️ broadcast(${eventType}): no channel set for guild ${guildId}, skipping`
+            );
+
             continue;
         }
 
@@ -1652,12 +1731,37 @@ function scheduleRestockBroadcast(intervalMinutes = 5) {
     setTimeout(
         async () => {
 
-            await broadcastFullShopStock();
+            try {
 
-            setInterval(
-                broadcastFullShopStock,
-                intervalMs
-            );
+                await broadcastFullShopStock();
+
+            } catch (error) {
+
+                console.error(
+                    "❌ First restock broadcast failed:",
+                    error
+                );
+
+            } finally {
+
+                // Registered in `finally` so a crash on the
+                // first run can NEVER silently cancel every
+                // future scheduled broadcast.
+                setInterval(
+                    () => {
+
+                        broadcastFullShopStock()
+                            .catch(error => {
+
+                                console.error(
+                                    "❌ Restock broadcast failed:",
+                                    error
+                                );
+                            });
+                    },
+                    intervalMs
+                );
+            }
         },
         delay
     );
