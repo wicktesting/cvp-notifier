@@ -6,10 +6,16 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local MainGui = PlayerGui:WaitForChild("MainGui")
+
+-- Used only by the merchant scanner below — a live server-side
+-- flag + shop/countdown UI confirmed to exist at these exact
+-- paths, far more reliable than guessing via GUI text scraping.
+local ServerInfo = ReplicatedStorage:WaitForChild("ServerInfo")
 
 -- ================================================================
 -- CONFIG
@@ -509,187 +515,194 @@ end
 -- MERCHANT
 -- ================================================================
 
-local MerchantItems = {
+-- Resolves the confirmed root frame the merchant (and other)
+-- shop panels live under. Returns nil if it can't be found
+-- within the timeout, rather than erroring the whole scan.
+local function getShopRoot()
 
-    "Gilded Hatch Hammer",
-    "Gold Scroll",
-    "Totem Of Status"
+    local ok, root = pcall(function()
 
-}
+        return PlayerGui
+            :WaitForChild("MainGui", 10)
+            :WaitForChild("Root", 10)
+            :WaitForChild("Frames", 10)
 
-local MerchantNames = {
+    end)
 
-    "King Capybara",
-    "Martian",
-    "Timbles",
-    "Jester"
+    if ok then
+        return root
+    end
 
-}
+    return nil
+
+end
+
+-- Generic reader for a shop's item list — used here for the
+-- merchant's current items, reading whatever is actually shown
+-- rather than matching against a fixed hardcoded item list.
+local function readShopItemList(root, shopName)
+
+    local items = {}
+
+    local shopFrame =
+        root and root:FindFirstChild(shopName)
+
+    if not shopFrame then
+        return items
+    end
+
+    local list = shopFrame:FindFirstChild("List")
+
+    if not list then
+        return items
+    end
+
+    for _, item in ipairs(list:GetChildren()) do
+
+        if item:IsA("Frame") then
+
+            local titleLabel = item:FindFirstChild("Title")
+            local rarityLabel = item:FindFirstChild("Rarity")
+            local stockLabel = item:FindFirstChild("Stock")
+
+            if titleLabel then
+
+                table.insert(items, {
+
+                    name = titleLabel.Text,
+
+                    rarity =
+                        rarityLabel
+                            and rarityLabel.Text
+                            or nil,
+
+                    stock =
+                        stockLabel
+                            and stockLabel.Text
+                            or "Unknown"
+
+                })
+
+            end
+
+        end
+
+    end
+
+    return items
+
+end
+
+-- Reads the merchant's live countdown text directly from its
+-- in-world billboard, rather than guessing from a fixed clock
+-- cycle. Only used to DISPLAY the countdown — falls back to the
+-- clock-based estimate (merchantSchedule on the bot side) if
+-- this comes back empty.
+local function readMerchantCountdown()
+
+    local ok, shop = pcall(function()
+
+        return workspace
+            :WaitForChild("World", 2)
+            :WaitForChild("Map", 2)
+            :FindFirstChild("TravelingMerchantShop")
+
+    end)
+
+    if not ok or not shop then
+        return nil
+    end
+
+    local timerLabel = nil
+
+    local billboardPart =
+        shop:FindFirstChild("BillboardPart")
+
+    if billboardPart then
+
+        local cd =
+            billboardPart:FindFirstChild("TravelingMerchantCountdown")
+
+        local frame =
+            cd and cd:FindFirstChild("Frame")
+
+        timerLabel =
+            frame and frame:FindFirstChild("Timer")
+
+    end
+
+    return timerLabel and timerLabel.Text or nil
+
+end
 
 local function scanMerchant()
 
-    local result = {
+    -- MERCHANT_ACTIVE is a real server-driven flag — trust it
+    -- directly instead of guessing "is a merchant here" from
+    -- GUI text, which is what kept silently failing before.
+    local active =
+        ServerInfo:FindFirstChild("MERCHANT_ACTIVE")
 
-        name = nil,
-        remainingSeconds = nil,
-        items = {}
-
-    }
-
-    -- Search the WHOLE PlayerGui, not just MainGui — the
-    -- merchant panel may live in a separate ScreenGui (common
-    -- for NPC/proximity-based UI), which MainGui-only searches
-    -- would never find no matter what the toggle is named.
-    local toggle = PlayerGui:FindFirstChild("ToggleMerchantShopFrame", true)
-
-    local forceShown = {}
-
-    if toggle and toggle:IsA("BindableEvent") then
-
-        pcall(function()
-            toggle:Fire()
-        end)
-
-        task.wait(0.2)
-
-    elseif toggle then
-
-        -- Found something by that name, but it's not a
-        -- BindableEvent — print what it actually is so the
-        -- real mechanism can be identified.
-        warn("[CVP] Found 'ToggleMerchantShopFrame' but it's a " .. toggle.ClassName .. ", not a BindableEvent — scanMerchant() doesn't know how to trigger it yet.")
-
-    else
-
-        -- The toggle instance wasn't found by that exact name.
-        -- If nothing opens the merchant panel, we'd just be
-        -- re-scanning whatever text happens to still be sitting
-        -- in the GUI from before — which looks exactly like
-        -- "stuck on the same result" even though the real
-        -- in-game merchant has changed.
-
-        warn("[CVP] ToggleMerchantShopFrame not found anywhere in PlayerGui — merchant panel likely isn't opening. Trying a fallback scan...")
-
-        for _, object in ipairs(PlayerGui:GetDescendants()) do
-
-            local isFrameLike =
-                object:IsA("Frame")
-                or object:IsA("CanvasGroup")
-
-            if isFrameLike
-                and object.Name:lower():find("merchant")
-                and object.Visible == false then
-
-                local ok = pcall(function()
-                    object.Visible = true
-                end)
-
-                if ok then
-                    table.insert(forceShown, object)
-                end
-
-            end
-
-        end
-
-        if #forceShown > 0 then
-
-            print("[CVP] Fallback: force-opened " .. #forceShown .. " merchant-related frame(s)")
-
-            task.wait(0.2)
-
-        else
-
-            warn("[CVP] Fallback found nothing named *Merchant* anywhere in PlayerGui either — the merchant frame's real name/location is needed to fix this properly. Try printing PlayerGui:GetChildren() while the merchant is visibly on screen in-game.")
-
-        end
-
-    end
-
-    local texts = getTextObjects(PlayerGui)
-
-    for _, object in ipairs(texts) do
-
-        local text = object.Text
-
-        -- Merchant name
-
-        for _, merchantName in ipairs(MerchantNames) do
-
-            if text:find(merchantName, 1, true) then
-
-                result.name = merchantName
-
-            end
-
-        end
-
-        -- Remaining time
-
-        local minutes, seconds =
-            text:match("(%d+):(%d+)")
-
-        if minutes and seconds then
-
-            result.remainingSeconds =
-                tonumber(minutes) * 60 +
-                tonumber(seconds)
-
-        end
-
-        -- Merchant items
-
-        for _, itemName in ipairs(MerchantItems) do
-
-            if text:find(itemName, 1, true) then
-
-                local stock = findStock(object)
-
-                if stock == nil then
-                    stock = 1
-                end
-
-                result.items[itemName] = stock
-
-            end
-
-        end
-
-    end
-
-    -- Put back any frames we force-opened via the fallback,
-    -- so we don't leave random panels stuck open in-game.
-    for _, object in ipairs(forceShown) do
-
-        pcall(function()
-            object.Visible = false
-        end)
-
-    end
-
-    print(
-        "[CVP] Merchant scan result — name: " ..
-        tostring(result.name) ..
-        ", items found: " ..
-        tostring(
-            (function()
-                local n = 0
-                for _ in pairs(result.items) do
-                    n += 1
-                end
-                return n
-            end)()
-        )
-    )
-
-    if not result.name
-        and not next(result.items) then
+    if not active or not active.Value then
 
         return nil
 
     end
 
-    return result
+    local root = getShopRoot()
+
+    if not root then
+
+        warn("[CVP] MERCHANT_ACTIVE is true but the shop root (MainGui.Root.Frames) couldn't be found.")
+
+        return nil
+
+    end
+
+    local shopFrame =
+        root:FindFirstChild("MerchantShop")
+
+    if not shopFrame then
+
+        warn("[CVP] MERCHANT_ACTIVE is true but no 'MerchantShop' frame was found under the shop root.")
+
+        return nil
+
+    end
+
+    local merchantName = nil
+
+    local infoLabel =
+        shopFrame:FindFirstChild("Details")
+        and shopFrame.Details:FindFirstChild("Background")
+        and shopFrame.Details.Background:FindFirstChild("MerchantShopInfo")
+
+    if infoLabel then
+        merchantName = infoLabel.Text
+    end
+
+    local items =
+        readShopItemList(root, "MerchantShop")
+
+    local timeLeft =
+        readMerchantCountdown()
+
+    print(
+        "[CVP] Merchant scan result — name: " ..
+        tostring(merchantName) ..
+        ", items found: " ..
+        tostring(#items) ..
+        ", timeLeft: " ..
+        tostring(timeLeft)
+    )
+
+    return {
+
+        name = merchantName or "Unknown",
+        timeLeft = timeLeft,
+        items = items
+
+    }
 
 end
 
