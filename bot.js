@@ -175,7 +175,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("setrole")
         .setDescription(
-            "Set a role to ping for a notification type"
+            "Set a role to ping for a notification type, or a specific item"
         )
         .addStringOption((option) =>
             option
@@ -206,6 +206,15 @@ const commands = [
                 .setName("role")
                 .setDescription("Role to ping")
                 .setRequired(true)
+        )
+        .addStringOption((option) =>
+            option
+                .setName("item")
+                .setDescription(
+                    "Optional: ping for ONE specific item instead of the whole category"
+                )
+                .setRequired(false)
+                .setAutocomplete(true)
         )
         .setDefaultMemberPermissions(
             PermissionFlagsBits.ManageGuild
@@ -243,6 +252,15 @@ const commands = [
                         value: "weather"
                     }
                 )
+        )
+        .addStringOption((option) =>
+            option
+                .setName("item")
+                .setDescription(
+                    "Optional: clear a specific item's ping instead of the whole category"
+                )
+                .setRequired(false)
+                .setAutocomplete(true)
         )
         .setDefaultMemberPermissions(
             PermissionFlagsBits.ManageGuild
@@ -423,12 +441,7 @@ function isDataStale(updatedAt) {
 // LINK BUTTONS
 // ============================================================
 
-function buildLinkButtons(
-    {
-        viewAllId = null,
-        viewAllLabel = "View All"
-    } = {}
-) {
+function buildLinkButtons() {
 
     const inviteUrl =
         `https://discord.com/oauth2/authorize` +
@@ -458,20 +471,8 @@ function buildLinkButtons(
                 .setStyle(ButtonStyle.Link)
                 .setURL(WIKI_URL);
 
-    const components = [button];
-
-    if (viewAllId) {
-
-        components.push(
-            new ButtonBuilder()
-                .setCustomId(viewAllId)
-                .setLabel(viewAllLabel)
-                .setStyle(ButtonStyle.Secondary)
-        );
-    }
-
     return new ActionRowBuilder().addComponents(
-        ...components
+        button
     );
 }
 
@@ -670,48 +671,6 @@ function itemIcon(name, fallback = "•") {
 // exists at all.
 // ============================================================
 
-function buildCatalogListEmbed(
-    title,
-    names
-) {
-
-    const lines =
-        names.map(name =>
-            `${itemIcon(name)} **${name}**`
-        );
-
-    return new EmbedBuilder()
-        .setDescription(
-            `# ${title}\n\n` +
-            lines.join("\n")
-        )
-        .setColor(0x2b2d31);
-}
-
-function buildMerchantCatalogEmbed() {
-
-    const sections =
-        Object.entries(MERCHANT_CATALOG)
-            .map(([merchantName, itemNames]) => {
-
-                const lines =
-                    itemNames.map(name =>
-                        `${itemIcon(name)} **${name}**`
-                    );
-
-                return (
-                    `**${merchantName}**\n` +
-                    lines.join("\n")
-                );
-            });
-
-    return new EmbedBuilder()
-        .setDescription(
-            "# Traveling Merchant — All Possible Items\n\n" +
-            sections.join("\n\n")
-        )
-        .setColor(0x2b2d31);
-}
 
 function formatStockBadge(stock) {
 
@@ -939,20 +898,35 @@ function normalizeMerchant(raw) {
 function normalizeWeather(raw) {
 
     if (!raw) {
-        return null;
+        return [];
     }
 
+    // Backward/forward compatible with a few possible shapes:
+    // a plain string, { names: [...] }, { name: "..." }, or
+    // already an array.
     if (typeof raw === "string") {
-        return raw;
+        return [raw];
     }
 
-    return (
+    if (Array.isArray(raw)) {
+        return raw.filter(Boolean);
+    }
+
+    if (
+        Array.isArray(raw.names) &&
+        raw.names.length > 0
+    ) {
+        return raw.names.filter(Boolean);
+    }
+
+    const single =
         raw.current ||
         raw.Current ||
         raw.name ||
         raw.Name ||
-        null
-    );
+        null;
+
+    return single ? [single] : [];
 }
 
 // ============================================================
@@ -1203,63 +1177,86 @@ function buildMerchantEmbed(
 // ============================================================
 
 function buildWeatherEmbed(
-    weather,
+    weatherList,
     updatedAt = null
 ) {
 
     // No special weather detected just means it's clear/Sunny —
     // that's the game's baseline state, not missing data.
-    if (!weather) {
-        weather = "Sunny";
+    if (
+        !weatherList ||
+        weatherList.length === 0
+    ) {
+        weatherList = ["Sunny"];
     }
 
-    let info = null;
-
-    try {
-        info = weatherInfo(weather);
-    } catch (error) {
-        console.error(
-            "weatherInfo error:",
-            error.message
-        );
-    }
+    const primaryInfo =
+        weatherInfo(weatherList[0]);
 
     const embed =
         new EmbedBuilder()
             .setColor(
-                info && info.color
-                    ? info.color
+                primaryInfo && primaryInfo.color
+                    ? primaryInfo.color
                     : 0x344700
             );
 
+    const heading =
+        weatherList.length > 1
+            ? `# Current Weather: ${weatherList.join(" + ")}\n\n`
+            : `# Current Weather: ${weatherList[0]}\n\n`;
+
+    const sections =
+        weatherList.map(name => {
+
+            let info = null;
+
+            try {
+                info = weatherInfo(name);
+            } catch (error) {
+                console.error(
+                    "weatherInfo error:",
+                    error.message
+                );
+            }
+
+            let section =
+                weatherList.length > 1
+                    ? `**${name}**\n`
+                    : "";
+
+            section +=
+                info && info.description
+                    ? info.description
+                    : "";
+
+            if (
+                info &&
+                info.mutation
+            ) {
+
+                const chance =
+                    info.mutationChance !== undefined
+                        ? Math.round(
+                            info.mutationChance * 100
+                        )
+                        : null;
+
+                section +=
+                    `\n**Mutation chance:** ${info.mutation}`;
+
+                if (chance !== null) {
+                    section +=
+                        ` (${chance}%)`;
+                }
+            }
+
+            return section;
+        });
+
     let description =
-        `# Current Weather: ${weather}\n\n` +
-        (
-            info && info.description
-                ? info.description
-                : ""
-        );
-
-    if (
-        info &&
-        info.mutation
-    ) {
-
-        const chance =
-            info.mutationChance !== undefined
-                ? Math.round(
-                    info.mutationChance * 100
-                )
-                : null;
-
-        description +=
-            `\n\n**Mutation chance:** ${info.mutation}`;
-
-        if (chance !== null) {
-            description +=
-                ` (${chance}%)`;
-        }
-    }
+        heading +
+        sections.join("\n\n");
 
     const footer =
         updatedFooterText(updatedAt);
@@ -1285,66 +1282,55 @@ client.on(
     async interaction => {
 
         // ================================================
-        // "VIEW ALL" BUTTON CLICKS
+        // AUTOCOMPLETE (item option on /setrole, /clearrole)
         // ================================================
 
-        if (interaction.isButton()) {
+        if (interaction.isAutocomplete()) {
 
             try {
 
-                if (interaction.customId === "viewAll_eggShop") {
+                const event =
+                    interaction.options.getString(
+                        "event"
+                    );
 
-                    return interaction.reply({
-                        embeds: [
-                            buildCatalogListEmbed(
-                                "All Eggs",
-                                EGG_ORDER
-                            )
-                        ],
-                        ephemeral: true
-                    });
-                }
+                const focused =
+                    interaction.options.getFocused()
+                        .toLowerCase();
 
-                if (interaction.customId === "viewAll_gearShop") {
+                const itemsByEvent = {
+                    eggShop: EGG_ORDER,
+                    gearShop: GEAR_ORDER,
+                    merchant:
+                        Object.values(MERCHANT_CATALOG)
+                            .flat(),
+                    weather: WEATHER_ORDER
+                };
 
-                    return interaction.reply({
-                        embeds: [
-                            buildCatalogListEmbed(
-                                "All Gear",
-                                GEAR_ORDER
-                            )
-                        ],
-                        ephemeral: true
-                    });
-                }
+                const candidates =
+                    itemsByEvent[event] || [];
 
-                if (interaction.customId === "viewAll_merchant") {
+                const filtered =
+                    candidates
+                        .filter(name =>
+                            name
+                                .toLowerCase()
+                                .includes(focused)
+                        )
+                        .slice(0, 25)
+                        .map(name => ({
+                            name,
+                            value: name
+                        }));
 
-                    return interaction.reply({
-                        embeds: [
-                            buildMerchantCatalogEmbed()
-                        ],
-                        ephemeral: true
-                    });
-                }
-
-                if (interaction.customId === "viewAll_weather") {
-
-                    return interaction.reply({
-                        embeds: [
-                            buildCatalogListEmbed(
-                                "All Weather Types",
-                                WEATHER_ORDER
-                            )
-                        ],
-                        ephemeral: true
-                    });
-                }
+                await interaction.respond(
+                    filtered
+                );
 
             } catch (error) {
 
                 console.error(
-                    `❌ Error handling button ${interaction.customId}:`,
+                    "❌ Autocomplete error:",
                     error
                 );
             }
@@ -1393,10 +1379,7 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons({
-                            viewAllId: "viewAll_eggShop",
-                            viewAllLabel: "View All Eggs"
-                        })
+                        buildLinkButtons()
                     ]
                 });
             }
@@ -1432,10 +1415,7 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons({
-                            viewAllId: "viewAll_gearShop",
-                            viewAllLabel: "View All Gear"
-                        })
+                        buildLinkButtons()
                     ]
                 });
             }
@@ -1465,10 +1445,7 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons({
-                            viewAllId: "viewAll_merchant",
-                            viewAllLabel: "View All Merchant Items"
-                        })
+                        buildLinkButtons()
                     ]
                 });
             }
@@ -1498,10 +1475,7 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons({
-                            viewAllId: "viewAll_weather",
-                            viewAllLabel: "View All Weather"
-                        })
+                        buildLinkButtons()
                     ]
                 });
             }
@@ -1630,6 +1604,26 @@ client.on(
                         "role"
                     );
 
+                const item =
+                    interaction.options.getString(
+                        "item"
+                    );
+
+                if (item) {
+
+                    db.setItemRole(
+                        interaction.guildId,
+                        item,
+                        role.id
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `✅ <@&${role.id}> will now be pinged specifically for **${item}**.`,
+                        ephemeral: true
+                    });
+                }
+
                 db.setRole(
                     interaction.guildId,
                     event,
@@ -1656,6 +1650,25 @@ client.on(
                     interaction.options.getString(
                         "event"
                     );
+
+                const item =
+                    interaction.options.getString(
+                        "item"
+                    );
+
+                if (item) {
+
+                    db.clearItemRole(
+                        interaction.guildId,
+                        item
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `✅ Ping role cleared for **${item}**.`,
+                        ephemeral: true
+                    });
+                }
 
                 db.clearRole(
                     interaction.guildId,
@@ -1720,6 +1733,21 @@ client.on(
                             .join("\n")
                         : "_None set — use /setrole_";
 
+                const itemRoles =
+                    Object.entries(
+                        config.itemRoles || {}
+                    );
+
+                const itemRoleLines =
+                    itemRoles.length > 0
+                        ? itemRoles
+                            .map(
+                                ([itemName, value]) =>
+                                    `**${itemName}:** <@&${value}>`
+                            )
+                            .join("\n")
+                        : "_None set — use /setrole with an item_";
+
                 const embed =
                     new EmbedBuilder()
                         .setTitle(
@@ -1727,7 +1755,8 @@ client.on(
                         )
                         .setDescription(
                             `**Notification Channels:**\n${channelLines}\n\n` +
-                            `**Ping Roles:**\n${roleLines}`
+                            `**Ping Roles:**\n${roleLines}\n\n` +
+                            `**Individual Item Pings:**\n${itemRoleLines}`
                         )
                         .setColor(0x2b2d31);
 
@@ -1784,7 +1813,15 @@ client.on(
 let lastState = {
 
     merchantName: null,
-    weather: null,
+    weather: [],
+
+    // Per-item availability, tracked ONLY to detect which
+    // specific items newly restocked (for individual item role
+    // pings) — does NOT control what the periodic broadcast
+    // shows, that's always the full current stock regardless.
+    eggShop: {},
+    gearShop: {},
+    shopStateInitialized: false,
 
     initialized: false
 };
@@ -1795,7 +1832,8 @@ let lastState = {
 
 async function broadcast(
     eventType,
-    embed
+    embed,
+    itemNames = []
 ) {
 
     const guildConfigs =
@@ -1840,34 +1878,38 @@ async function broadcast(
                 continue;
             }
 
-            const roleId =
+            const categoryRoleId =
                 config.roles &&
                 config.roles[eventType];
 
-            const viewAllMap = {
-                eggShop: {
-                    viewAllId: "viewAll_eggShop",
-                    viewAllLabel: "View All Eggs"
-                },
-                gearShop: {
-                    viewAllId: "viewAll_gearShop",
-                    viewAllLabel: "View All Gear"
-                },
-                merchant: {
-                    viewAllId: "viewAll_merchant",
-                    viewAllLabel: "View All Merchant Items"
-                },
-                weather: {
-                    viewAllId: "viewAll_weather",
-                    viewAllLabel: "View All Weather"
-                }
-            };
+            const itemRoleIds =
+                itemNames
+                    .map(name =>
+                        config.itemRoles &&
+                        config.itemRoles[name]
+                    )
+                    .filter(Boolean);
+
+            const mentionRoleIds =
+                [
+                    ...(
+                        categoryRoleId
+                            ? [categoryRoleId]
+                            : []
+                    ),
+                    ...itemRoleIds
+                ].filter(
+                    (id, index, arr) =>
+                        arr.indexOf(id) === index
+                );
 
             await channel.send({
 
                 content:
-                    roleId
-                        ? `<@&${roleId}>`
+                    mentionRoleIds.length > 0
+                        ? mentionRoleIds
+                            .map(id => `<@&${id}>`)
+                            .join(" ")
                         : undefined,
 
                 embeds: [
@@ -1875,21 +1917,21 @@ async function broadcast(
                 ],
 
                 components: [
-                    buildLinkButtons(
-                        viewAllMap[eventType] || {}
-                    )
+                    buildLinkButtons()
                 ],
 
                 allowedMentions: {
-                    roles:
-                        roleId
-                            ? [roleId]
-                            : []
+                    roles: mentionRoleIds
                 }
             });
 
             console.log(
-                `📢 Sent ${eventType} notification to ${guildId}`
+                `📢 Sent ${eventType} notification to ${guildId}` +
+                (
+                    itemRoleIds.length > 0
+                        ? ` (+${itemRoleIds.length} item ping(s))`
+                        : ""
+                )
             );
 
         } catch (error) {
@@ -1997,12 +2039,18 @@ async function pollOnce() {
             `🚚 New merchant detected: ${merchantName}`
         );
 
+        const merchantItemNames =
+            merchant.items.map(
+                item => item.name
+            );
+
         await broadcast(
             "merchant",
             buildMerchantEmbed(
                 merchant,
                 data.updatedAt
-            )
+            ),
+            merchantItemNames
         );
     }
 
@@ -2018,22 +2066,45 @@ async function pollOnce() {
             data.weather
         );
 
-    if (
-        weather &&
-        weather !==
-            lastState.weather
-    ) {
+    const previousWeather =
+        lastState.weather || [];
 
-        console.log(
-            `🌦️ Weather changed: ${weather}`
+    const weatherChanged =
+        weather.length !== previousWeather.length ||
+        weather.some(
+            name => !previousWeather.includes(name)
         );
 
+    if (
+        weather.length > 0 &&
+        weatherChanged
+    ) {
+
+        const newlyActiveWeather =
+            weather.filter(
+                name => !previousWeather.includes(name)
+            );
+
+        console.log(
+            `🌦️ Weather changed: ${weather.join(", ")}` +
+            (
+                newlyActiveWeather.length > 0
+                    ? ` (new: ${newlyActiveWeather.join(", ")})`
+                    : ""
+            )
+        );
+
+        // Ping the general weather role PLUS any individual
+        // weather-specific roles for whichever weather(s) are
+        // newly active — if 2+ start at once, all their roles
+        // get pinged together in the same message.
         await broadcast(
             "weather",
             buildWeatherEmbed(
                 weather,
                 data.updatedAt
-            )
+            ),
+            newlyActiveWeather
         );
     }
 
@@ -2085,15 +2156,63 @@ async function broadcastFullShopStock() {
         "🔁 Restock mark reached — broadcasting current shop stock"
     );
 
+    const eggItems =
+        normalizeStockList(
+            data.eggShop
+        );
+
+    const gearItems =
+        normalizeStockList(
+            data.gearShop
+        );
+
+    // Track per-item availability purely to know which specific
+    // items are NEWLY in stock this cycle (for individual item
+    // role pings) — doesn't affect what the embed shows, that's
+    // always the full current stock regardless.
+    function computeNewlyInStock(items, stateKey) {
+
+        const newly = [];
+
+        for (const item of items) {
+
+            const wasAvailable =
+                lastState[stateKey][item.name] ||
+                false;
+
+            const isAvailable =
+                stockIsAvailable(item.stock);
+
+            if (
+                isAvailable &&
+                !wasAvailable &&
+                lastState.shopStateInitialized
+            ) {
+                newly.push(item.name);
+            }
+
+            lastState[stateKey][item.name] =
+                isAvailable;
+        }
+
+        return newly;
+    }
+
+    const newlyEggNames =
+        computeNewlyInStock(eggItems, "eggShop");
+
+    const newlyGearNames =
+        computeNewlyInStock(gearItems, "gearShop");
+
+    lastState.shopStateInitialized = true;
+
     const eggEmbed =
         buildStockEmbed(
             "The Egg Shop has been restocked!",
-            normalizeStockList(
-                data.eggShop
-            ),
+            eggItems,
             {
                 icon: "•",
-                            order: EGG_ORDER,
+                order: EGG_ORDER,
                 updatedAt:
                     data.updatedAt
             }
@@ -2101,18 +2220,17 @@ async function broadcastFullShopStock() {
 
     await broadcast(
         "eggShop",
-        eggEmbed
+        eggEmbed,
+        newlyEggNames
     );
 
     const gearEmbed =
         buildStockEmbed(
             "The Gear Shop has been restocked!",
-            normalizeStockList(
-                data.gearShop
-            ),
+            gearItems,
             {
                 icon: "•",
-                            order: GEAR_ORDER,
+                order: GEAR_ORDER,
                 updatedAt:
                     data.updatedAt
             }
@@ -2120,15 +2238,16 @@ async function broadcastFullShopStock() {
 
     await broadcast(
         "gearShop",
-        gearEmbed
+        gearEmbed,
+        newlyGearNames
     );
 }
 
 // How long after the exact xx:00/xx:05 mark to wait before
 // broadcasting — gives the in-game script's scan (which now runs
-// every 5s) time to pick up the fresh stock and POST it to
+// every 2s) time to pick up the fresh stock and POST it to
 // the API first, so the broadcast isn't sent with stale data.
-const RESTOCK_BROADCAST_DELAY_MS = 8 * 1000;
+const RESTOCK_BROADCAST_DELAY_MS = 4 * 1000;
 
 function scheduleRestockBroadcast(intervalMinutes = 5) {
 
