@@ -390,10 +390,45 @@ async function fetchStatus() {
 }
 
 // ============================================================
+// DATA FRESHNESS
+//
+// If the in-game (Delta) script has disconnected, the API keeps
+// serving the LAST data it received — it doesn't know the source
+// went offline. Without this check, the bot would keep posting
+// "restocked!" messages using increasingly outdated data forever.
+// This treats data older than the threshold as untrustworthy and
+// pauses broadcasts until fresh data starts arriving again.
+// ============================================================
+
+const DATA_STALE_THRESHOLD_MS = 60 * 1000;
+
+function isDataStale(updatedAt) {
+
+    if (!updatedAt) {
+        return true;
+    }
+
+    const age =
+        Date.now() -
+        new Date(updatedAt).getTime();
+
+    if (Number.isNaN(age)) {
+        return true;
+    }
+
+    return age > DATA_STALE_THRESHOLD_MS;
+}
+
+// ============================================================
 // LINK BUTTONS
 // ============================================================
 
-function buildLinkButtons() {
+function buildLinkButtons(
+    {
+        viewAllId = null,
+        viewAllLabel = "View All"
+    } = {}
+) {
 
     const inviteUrl =
         `https://discord.com/oauth2/authorize` +
@@ -401,20 +436,42 @@ function buildLinkButtons() {
         `&scope=bot%20applications.commands` +
         `&permissions=216064`;
 
+    // Alternate which single button shows, flipping every 5
+    // real-world minutes (xx:00 = invite, xx:05 = wiki, xx:10 =
+    // invite, ...) instead of always showing both at once.
+    const slot =
+        Math.floor(
+            Date.now() / (5 * 60 * 1000)
+        );
+
+    const showInvite =
+        slot % 2 === 0;
+
+    const button =
+        showInvite
+            ? new ButtonBuilder()
+                .setLabel("Add Bot to Your Server")
+                .setStyle(ButtonStyle.Link)
+                .setURL(inviteUrl)
+            : new ButtonBuilder()
+                .setLabel("Capybaras vs Plants Wiki")
+                .setStyle(ButtonStyle.Link)
+                .setURL(WIKI_URL);
+
+    const components = [button];
+
+    if (viewAllId) {
+
+        components.push(
+            new ButtonBuilder()
+                .setCustomId(viewAllId)
+                .setLabel(viewAllLabel)
+                .setStyle(ButtonStyle.Secondary)
+        );
+    }
+
     return new ActionRowBuilder().addComponents(
-
-        new ButtonBuilder()
-            .setLabel("Add Bot to Your Server")
-            .setStyle(ButtonStyle.Link)
-            .setURL(inviteUrl)
-            .setEmoji("🤖"),
-
-        new ButtonBuilder()
-            .setLabel("Capybaras vs Plants Wiki")
-            .setStyle(ButtonStyle.Link)
-            .setURL(WIKI_URL)
-            .setEmoji("📖")
-
+        ...components
     );
 }
 
@@ -444,6 +501,120 @@ function buildLinkButtons() {
 // crash, no missing-icon error, it just won't have a custom
 // icon yet.
 // ============================================================
+
+// ============================================================
+// CANONICAL DISPLAY ORDER
+//
+// The scan on the Roblox side finds items in whatever order it
+// happens to encounter them in the GUI, which is NOT guaranteed
+// to be consistent — so without this, the Discord list order
+// jumps around randomly between updates. This forces a fixed,
+// intentional order every time instead.
+// ============================================================
+
+const EGG_ORDER = [
+    "Capybara Egg",
+    "Alpha Capybara Egg",
+    "Archer Capybara Egg",
+    "Magic Capybara Egg",
+    "Ghost Capybara Egg",
+    "Golem Capybara Egg",
+    "Robot Capybara Egg",
+    "Disco Capybara Egg",
+    "Angel Capybara Egg"
+];
+
+const GEAR_ORDER = [
+    "Hatch Hammer",
+    "Nametag",
+    "Mutation Sponge",
+    "Boombox",
+    "Bizarre Stopwatch"
+];
+
+// NOTE: only King Capybara's items are confirmed against real
+// in-game text (used by the scanner in script.lua). The other
+// three merchants' item names below are best-guess labels for
+// display purposes only, based on their emoji names — the
+// scanner can't detect them yet until exact in-game text is
+// confirmed and added to script.lua's MerchantItems list.
+const MERCHANT_CATALOG = {
+    "King Capybara": [
+        "Gilded Hatch Hammer",
+        "Gold Scroll",
+        "Totem Of Status"
+    ],
+    "Martian": [
+        "Raygun",
+        "Alien Tesla",
+        "Totem of Stars"
+    ],
+    "Timbles": [
+        "Totem of Might",
+        "Totem of Marrow",
+        "Rainbow Scroll"
+    ],
+    "Jester": [
+        "Moonlit",
+        "Chilly",
+        "Toasty",
+        "Tranquil",
+        "Shocked",
+        "Glitched"
+    ]
+};
+
+const WEATHER_ORDER = [
+    "Sunny",
+    "Night",
+    "Rain",
+    "Snowy",
+    "Zen",
+    "Meteor Shower",
+    "Red Sun",
+    "Heatwave",
+    "Glitch",
+    "Thunder",
+    "Reverse Sun",
+    "Taco Rain",
+    "Blizzard"
+];
+
+function sortByCanonicalOrder(
+    items,
+    order
+) {
+
+    if (!order) {
+        return items;
+    }
+
+    return items
+        .map((item, index) => ({
+            item,
+            index
+        }))
+        .sort((a, b) => {
+
+            let posA =
+                order.indexOf(a.item.name);
+
+            let posB =
+                order.indexOf(b.item.name);
+
+            if (posA === -1) {
+                posA = order.length + a.index;
+            }
+
+            if (posB === -1) {
+                posB = order.length + b.index;
+            }
+
+            return posA - posB;
+
+        })
+        .map(entry => entry.item);
+}
 
 const ITEM_EMOJIS = {
 
@@ -489,6 +660,57 @@ function itemIcon(name, fallback = "•") {
             ? emoji
             : fallback
     );
+}
+
+// ============================================================
+// FULL CATALOG EMBEDS ("View All" buttons)
+//
+// These show every possible item in a category, regardless of
+// current stock — for players who just want to know what
+// exists at all.
+// ============================================================
+
+function buildCatalogListEmbed(
+    title,
+    names
+) {
+
+    const lines =
+        names.map(name =>
+            `${itemIcon(name)} **${name}**`
+        );
+
+    return new EmbedBuilder()
+        .setDescription(
+            `# ${title}\n\n` +
+            lines.join("\n")
+        )
+        .setColor(0x2b2d31);
+}
+
+function buildMerchantCatalogEmbed() {
+
+    const sections =
+        Object.entries(MERCHANT_CATALOG)
+            .map(([merchantName, itemNames]) => {
+
+                const lines =
+                    itemNames.map(name =>
+                        `${itemIcon(name)} **${name}**`
+                    );
+
+                return (
+                    `**${merchantName}**\n` +
+                    lines.join("\n")
+                );
+            });
+
+    return new EmbedBuilder()
+        .setDescription(
+            "# Traveling Merchant — All Possible Items\n\n" +
+            sections.join("\n\n")
+        )
+        .setColor(0x2b2d31);
 }
 
 function formatStockBadge(stock) {
@@ -746,8 +968,15 @@ function buildStockEmbed(
     const {
         colorFallback = 0x2b2d31,
         updatedAt = null,
-        icon = "•"
+        icon = "•",
+        order = null
     } = options;
+
+    items =
+        sortByCanonicalOrder(
+            items,
+            order
+        );
 
     const embed =
         new EmbedBuilder();
@@ -978,14 +1207,10 @@ function buildWeatherEmbed(
     updatedAt = null
 ) {
 
+    // No special weather detected just means it's clear/Sunny —
+    // that's the game's baseline state, not missing data.
     if (!weather) {
-
-        return new EmbedBuilder()
-            .setDescription(
-                "# Weather\n\n" +
-                "No weather data available right now."
-            )
-            .setColor(0x2b2d31);
+        weather = "Sunny";
     }
 
     let info = null;
@@ -1059,6 +1284,74 @@ client.on(
     "interactionCreate",
     async interaction => {
 
+        // ================================================
+        // "VIEW ALL" BUTTON CLICKS
+        // ================================================
+
+        if (interaction.isButton()) {
+
+            try {
+
+                if (interaction.customId === "viewAll_eggShop") {
+
+                    return interaction.reply({
+                        embeds: [
+                            buildCatalogListEmbed(
+                                "All Eggs",
+                                EGG_ORDER
+                            )
+                        ],
+                        ephemeral: true
+                    });
+                }
+
+                if (interaction.customId === "viewAll_gearShop") {
+
+                    return interaction.reply({
+                        embeds: [
+                            buildCatalogListEmbed(
+                                "All Gear",
+                                GEAR_ORDER
+                            )
+                        ],
+                        ephemeral: true
+                    });
+                }
+
+                if (interaction.customId === "viewAll_merchant") {
+
+                    return interaction.reply({
+                        embeds: [
+                            buildMerchantCatalogEmbed()
+                        ],
+                        ephemeral: true
+                    });
+                }
+
+                if (interaction.customId === "viewAll_weather") {
+
+                    return interaction.reply({
+                        embeds: [
+                            buildCatalogListEmbed(
+                                "All Weather Types",
+                                WEATHER_ORDER
+                            )
+                        ],
+                        ephemeral: true
+                    });
+                }
+
+            } catch (error) {
+
+                console.error(
+                    `❌ Error handling button ${interaction.customId}:`,
+                    error
+                );
+            }
+
+            return;
+        }
+
         if (!interaction.isChatInputCommand()) {
             return;
         }
@@ -1091,6 +1384,7 @@ client.on(
                         ),
                         {
                             icon: "•",
+                            order: EGG_ORDER,
                             updatedAt:
                                 data.updatedAt
                         }
@@ -1099,7 +1393,10 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons()
+                        buildLinkButtons({
+                            viewAllId: "viewAll_eggShop",
+                            viewAllLabel: "View All Eggs"
+                        })
                     ]
                 });
             }
@@ -1126,6 +1423,7 @@ client.on(
                         ),
                         {
                             icon: "•",
+                            order: GEAR_ORDER,
                             updatedAt:
                                 data.updatedAt
                         }
@@ -1134,7 +1432,10 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons()
+                        buildLinkButtons({
+                            viewAllId: "viewAll_gearShop",
+                            viewAllLabel: "View All Gear"
+                        })
                     ]
                 });
             }
@@ -1164,7 +1465,10 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons()
+                        buildLinkButtons({
+                            viewAllId: "viewAll_merchant",
+                            viewAllLabel: "View All Merchant Items"
+                        })
                     ]
                 });
             }
@@ -1194,7 +1498,10 @@ client.on(
                 return interaction.editReply({
                     embeds: [embed],
                     components: [
-                        buildLinkButtons()
+                        buildLinkButtons({
+                            viewAllId: "viewAll_weather",
+                            viewAllLabel: "View All Weather"
+                        })
                     ]
                 });
             }
@@ -1222,6 +1529,7 @@ client.on(
                         ),
                         {
                             icon: "•",
+                            order: EGG_ORDER,
                             updatedAt:
                                 data.updatedAt
                         }
@@ -1234,6 +1542,7 @@ client.on(
                         ),
                         {
                             icon: "•",
+                            order: GEAR_ORDER,
                             updatedAt:
                                 data.updatedAt
                         }
@@ -1535,6 +1844,25 @@ async function broadcast(
                 config.roles &&
                 config.roles[eventType];
 
+            const viewAllMap = {
+                eggShop: {
+                    viewAllId: "viewAll_eggShop",
+                    viewAllLabel: "View All Eggs"
+                },
+                gearShop: {
+                    viewAllId: "viewAll_gearShop",
+                    viewAllLabel: "View All Gear"
+                },
+                merchant: {
+                    viewAllId: "viewAll_merchant",
+                    viewAllLabel: "View All Merchant Items"
+                },
+                weather: {
+                    viewAllId: "viewAll_weather",
+                    viewAllLabel: "View All Weather"
+                }
+            };
+
             await channel.send({
 
                 content:
@@ -1547,7 +1875,9 @@ async function broadcast(
                 ],
 
                 components: [
-                    buildLinkButtons()
+                    buildLinkButtons(
+                        viewAllMap[eventType] || {}
+                    )
                 ],
 
                 allowedMentions: {
@@ -1590,6 +1920,17 @@ async function pollOnce() {
         console.error(
             "❌ Poll failed:",
             error.message
+        );
+
+        return;
+    }
+
+    if (isDataStale(data.updatedAt)) {
+
+        console.warn(
+            `⏸️ Skipping poll — data is stale ` +
+            `(last update: ${data.updatedAt || "never"}). ` +
+            `Is the in-game script still running?`
         );
 
         return;
@@ -1729,6 +2070,17 @@ async function broadcastFullShopStock() {
         return;
     }
 
+    if (isDataStale(data.updatedAt)) {
+
+        console.warn(
+            `⏸️ Skipping restock broadcast — data is stale ` +
+            `(last update: ${data.updatedAt || "never"}). ` +
+            `Is the in-game script still running?`
+        );
+
+        return;
+    }
+
     console.log(
         "🔁 Restock mark reached — broadcasting current shop stock"
     );
@@ -1741,6 +2093,7 @@ async function broadcastFullShopStock() {
             ),
             {
                 icon: "•",
+                            order: EGG_ORDER,
                 updatedAt:
                     data.updatedAt
             }
@@ -1759,6 +2112,7 @@ async function broadcastFullShopStock() {
             ),
             {
                 icon: "•",
+                            order: GEAR_ORDER,
                 updatedAt:
                     data.updatedAt
             }
