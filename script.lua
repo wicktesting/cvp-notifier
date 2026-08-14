@@ -19,7 +19,7 @@ local API_URL = "https://cvp-notifier-production.up.railway.app/api/update"
 
 local API_KEY = ""
 
-local SCAN_EVERY = 5
+local SCAN_EVERY = 2
 
 -- ================================================================
 -- CLEAN OLD GUI
@@ -405,7 +405,7 @@ local function scanEggShop()
             toggle:Fire()
         end)
 
-        task.wait(0.5)
+        task.wait(0.2)
 
     end
 
@@ -469,7 +469,7 @@ local function scanGearShop()
             toggle:Fire()
         end)
 
-        task.wait(0.5)
+        task.wait(0.2)
 
     end
 
@@ -536,7 +536,11 @@ local function scanMerchant()
 
     }
 
-    local toggle = MainGui:FindFirstChild("ToggleMerchantShopFrame", true)
+    -- Search the WHOLE PlayerGui, not just MainGui — the
+    -- merchant panel may live in a separate ScreenGui (common
+    -- for NPC/proximity-based UI), which MainGui-only searches
+    -- would never find no matter what the toggle is named.
+    local toggle = PlayerGui:FindFirstChild("ToggleMerchantShopFrame", true)
 
     local forceShown = {}
 
@@ -546,7 +550,14 @@ local function scanMerchant()
             toggle:Fire()
         end)
 
-        task.wait(0.5)
+        task.wait(0.2)
+
+    elseif toggle then
+
+        -- Found something by that name, but it's not a
+        -- BindableEvent — print what it actually is so the
+        -- real mechanism can be identified.
+        warn("[CVP] Found 'ToggleMerchantShopFrame' but it's a " .. toggle.ClassName .. ", not a BindableEvent — scanMerchant() doesn't know how to trigger it yet.")
 
     else
 
@@ -557,9 +568,9 @@ local function scanMerchant()
         -- "stuck on the same result" even though the real
         -- in-game merchant has changed.
 
-        warn("[CVP] ToggleMerchantShopFrame not found — merchant panel likely isn't opening. Trying a fallback scan...")
+        warn("[CVP] ToggleMerchantShopFrame not found anywhere in PlayerGui — merchant panel likely isn't opening. Trying a fallback scan...")
 
-        for _, object in ipairs(MainGui:GetDescendants()) do
+        for _, object in ipairs(PlayerGui:GetDescendants()) do
 
             local isFrameLike =
                 object:IsA("Frame")
@@ -585,17 +596,17 @@ local function scanMerchant()
 
             print("[CVP] Fallback: force-opened " .. #forceShown .. " merchant-related frame(s)")
 
-            task.wait(0.5)
+            task.wait(0.2)
 
         else
 
-            warn("[CVP] Fallback found nothing named *Merchant* either — the merchant frame's real name is needed to fix this properly.")
+            warn("[CVP] Fallback found nothing named *Merchant* anywhere in PlayerGui either — the merchant frame's real name/location is needed to fix this properly. Try printing PlayerGui:GetChildren() while the merchant is visibly on screen in-game.")
 
         end
 
     end
 
-    local texts = getTextObjects(MainGui)
+    local texts = getTextObjects(PlayerGui)
 
     for _, object in ipairs(texts) do
 
@@ -705,7 +716,21 @@ local WeatherNames = {
 
 local function identifyWeather()
 
-    -- First use Lighting Sky
+    local found = {}
+    local foundSet = {}
+
+    local function addWeather(name)
+
+        if name and not foundSet[name] then
+            foundSet[name] = true
+            table.insert(found, name)
+        end
+
+    end
+
+    -- Sky-based (the game's primary ambient weather — usually
+    -- just one, but doesn't rule out additional concurrent
+    -- weather labels shown in the GUI below)
 
     local sky = Lighting:FindFirstChildWhichIsA("Sky")
 
@@ -739,11 +764,7 @@ local function identifyWeather()
 
                         if profile.Name ~= "Default" then
 
-                            return {
-
-                                name = profile.Name
-
-                            }
+                            addWeather(profile.Name)
 
                         end
 
@@ -757,7 +778,9 @@ local function identifyWeather()
 
     end
 
-    -- Fallback to GUI text
+    -- GUI text — catches ALL currently active weather labels,
+    -- not just the first match, since 2+ weathers can be active
+    -- at the same time (e.g. Thunder AND Rain together).
 
     for _, object in ipairs(getTextObjects(MainGui)) do
 
@@ -765,11 +788,7 @@ local function identifyWeather()
 
             if object.Text == weatherName then
 
-                return {
-
-                    name = weatherName
-
-                }
+                addWeather(weatherName)
 
             end
 
@@ -777,7 +796,11 @@ local function identifyWeather()
 
     end
 
-    return nil
+    if #found == 0 then
+        return nil
+    end
+
+    return { names = found }
 
 end
 
@@ -927,6 +950,12 @@ local function runScan()
             end
         end
 
+        local weatherDisplay = "Clear"
+
+        if weather and weather.names and #weather.names > 0 then
+            weatherDisplay = table.concat(weather.names, ", ")
+        end
+
         DataLabel.Text =
             "🥚 Eggs: " ..
             tostring(eggInStock) ..
@@ -941,7 +970,7 @@ local function runScan()
             "\n🚚 Merchant: " ..
             tostring(merchant and merchant.name or "None") ..
             "\n🌦 Weather: " ..
-            tostring(weather and weather.name or "Clear")
+            weatherDisplay
 
         print("[CVP] Railway response:")
         print(response)
