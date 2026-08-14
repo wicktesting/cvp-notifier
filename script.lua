@@ -12,10 +12,11 @@ local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local MainGui = PlayerGui:WaitForChild("MainGui")
 
--- Used only by the merchant scanner below — a live server-side
--- flag + shop/countdown UI confirmed to exist at these exact
--- paths, far more reliable than guessing via GUI text scraping.
+-- Used by the merchant scanner below — a live server-side flag
+-- plus the real remotes the server uses to push merchant state,
+-- far more reliable than guessing via GUI text scraping.
 local ServerInfo = ReplicatedStorage:WaitForChild("ServerInfo")
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 -- ================================================================
 -- CONFIG
@@ -512,8 +513,96 @@ local function scanGearShop()
 end
 
 -- ================================================================
--- MERCHANT
+-- MERCHANT — LIVE REMOTE STATE (this is the actual fix)
 -- ================================================================
+-- The GUI has NO text label that reliably holds the merchant's
+-- identity (King Capybara / Martian / Timbles / Jester).
+-- MerchantShopInfo only shows an intermittent "leaves in Xm Ys"
+-- countdown, or is blank — reading it as the merchant's name is
+-- what was silently breaking detection.
+--
+-- The real source of truth is the server pushing these remotes
+-- directly, confirmed live:
+--   Remotes.RequestMerchantStock:InvokeServer() -> name, stockTable
+--   Remotes.UpdateTravelingMerchantStock(name, stockTable)  [pushed on change]
+--   Remotes.MerchantLeft()                                  [pushed when merchant leaves]
+
+local currentMerchantName = nil
+local currentMerchantStock = nil -- { [itemName] = count }
+
+local function formatStockText(count)
+
+    if type(count) == "number" then
+
+        if count > 0 then
+            return "x" .. count .. " In stock"
+        else
+            return "NO STOCK"
+        end
+
+    end
+
+    return tostring(count)
+
+end
+
+local function refreshMerchantFromServer()
+
+    local RequestMerchantStock =
+        Remotes:FindFirstChild("RequestMerchantStock")
+
+    if not RequestMerchantStock then
+        return
+    end
+
+    local ok, name, stock = pcall(function()
+        return RequestMerchantStock:InvokeServer()
+    end)
+
+    if ok and typeof(name) == "string" and name ~= "" then
+        currentMerchantName = name
+        currentMerchantStock = stock
+    end
+
+end
+
+-- Pull current state immediately in case a merchant is already
+-- active when this script starts, so we don't have to wait for
+-- the next UpdateTravelingMerchantStock push to learn about it.
+do
+
+    local active =
+        ServerInfo:FindFirstChild("MERCHANT_ACTIVE")
+
+    if active and active.Value then
+        refreshMerchantFromServer()
+    end
+
+end
+
+local updateMerchantEvent =
+    Remotes:FindFirstChild("UpdateTravelingMerchantStock")
+
+if updateMerchantEvent then
+
+    updateMerchantEvent.OnClientEvent:Connect(function(name, stock)
+        currentMerchantName = name
+        currentMerchantStock = stock
+    end)
+
+end
+
+local merchantLeftEvent =
+    Remotes:FindFirstChild("MerchantLeft")
+
+if merchantLeftEvent then
+
+    merchantLeftEvent.OnClientEvent:Connect(function()
+        currentMerchantName = nil
+        currentMerchantStock = nil
+    end)
+
+end
 
 -- Resolves the confirmed root frame the merchant (and other)
 -- shop panels live under. Returns nil if it can't be found
@@ -537,67 +626,10 @@ local function getShopRoot()
 
 end
 
--- Generic reader for a shop's item list — used here for the
--- merchant's current items, reading whatever is actually shown
--- rather than matching against a fixed hardcoded item list.
-local function readShopItemList(root, shopName)
-
-    local items = {}
-
-    local shopFrame =
-        root and root:FindFirstChild(shopName)
-
-    if not shopFrame then
-        return items
-    end
-
-    local list = shopFrame:FindFirstChild("List")
-
-    if not list then
-        return items
-    end
-
-    for _, item in ipairs(list:GetChildren()) do
-
-        if item:IsA("Frame") then
-
-            local titleLabel = item:FindFirstChild("Title")
-            local rarityLabel = item:FindFirstChild("Rarity")
-            local stockLabel = item:FindFirstChild("Stock")
-
-            if titleLabel then
-
-                table.insert(items, {
-
-                    name = titleLabel.Text,
-
-                    rarity =
-                        rarityLabel
-                            and rarityLabel.Text
-                            or nil,
-
-                    stock =
-                        stockLabel
-                            and stockLabel.Text
-                            or "Unknown"
-
-                })
-
-            end
-
-        end
-
-    end
-
-    return items
-
-end
-
 -- Reads the merchant's live countdown text directly from its
 -- in-world billboard, rather than guessing from a fixed clock
--- cycle. Only used to DISPLAY the countdown — falls back to the
--- clock-based estimate (merchantSchedule on the bot side) if
--- this comes back empty.
+-- cycle. Only used to DISPLAY the "leaves in" countdown — has
+-- nothing to do with identifying WHICH merchant it is.
 local function readMerchantCountdown()
 
     local ok, shop = pcall(function()
@@ -639,57 +671,59 @@ local function scanMerchant()
 
     -- MERCHANT_ACTIVE is a real server-driven flag — trust it
     -- directly instead of guessing "is a merchant here" from
-    -- GUI text, which is what kept silently failing before.
+    -- GUI text.
     local active =
         ServerInfo:FindFirstChild("MERCHANT_ACTIVE")
 
     if not active or not active.Value then
 
-        return nil
-
-    end
-
-    local root = getShopRoot()
-
-    if not root then
-
-        warn("[CVP] MERCHANT_ACTIVE is true but the shop root (MainGui.Root.Frames) couldn't be found.")
+        currentMerchantName = nil
+        currentMerchantStock = nil
 
         return nil
 
     end
 
-    local shopFrame =
-        root:FindFirstChild("MerchantShop")
+    if not currentMerchantName then
 
-    if not shopFrame then
+        -- MERCHANT_ACTIVE flipped true before our initial fetch
+        -- or the push event caught up — try pulling once more
+        -- before giving up on this scan.
+        refreshMerchantFromServer()
 
-        warn("[CVP] MERCHANT_ACTIVE is true but no 'MerchantShop' frame was found under the shop root.")
+    end
+
+    if not currentMerchantName then
+
+        warn("[CVP] MERCHANT_ACTIVE is true but no merchant identity has arrived yet from RequestMerchantStock / UpdateTravelingMerchantStock.")
 
         return nil
 
     end
 
-    local merchantName = nil
+    local items = {}
 
-    local infoLabel =
-        shopFrame:FindFirstChild("Details")
-        and shopFrame.Details:FindFirstChild("Background")
-        and shopFrame.Details.Background:FindFirstChild("MerchantShopInfo")
+    if currentMerchantStock then
 
-    if infoLabel then
-        merchantName = infoLabel.Text
+        for itemName, count in pairs(currentMerchantStock) do
+
+            table.insert(items, {
+
+                name = itemName,
+                stock = formatStockText(count)
+
+            })
+
+        end
+
     end
-
-    local items =
-        readShopItemList(root, "MerchantShop")
 
     local timeLeft =
         readMerchantCountdown()
 
     print(
         "[CVP] Merchant scan result — name: " ..
-        tostring(merchantName) ..
+        tostring(currentMerchantName) ..
         ", items found: " ..
         tostring(#items) ..
         ", timeLeft: " ..
@@ -698,7 +732,7 @@ local function scanMerchant()
 
     return {
 
-        name = merchantName or "Unknown",
+        name = currentMerchantName,
         timeLeft = timeLeft,
         items = items
 
