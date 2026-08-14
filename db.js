@@ -27,13 +27,14 @@ console.log(
 // guilds: {
 //   "<guildId>": {
 //     channels: { eggShop: "channelId", gearShop: "channelId", merchant: "channelId", weather: "channelId" },
-//     roles: { eggShop: "roleId", gearShop: "roleId", merchant: "roleId", weather: "roleId" }
+//     roles: { eggShop: "roleId", gearShop: "roleId", merchant: "roleId", weather: "roleId" },
+//     itemRoles: { "Angel Capybara Egg": "roleId", "Thunder": "roleId", ... }
 //   }
 // }
 db.defaults({ guilds: {} }).write();
 
 function getGuildConfig(guildId) {
-  return db.get(`guilds.${guildId}`).value() || { channels: {}, roles: {} };
+  return db.get(`guilds.${guildId}`).value() || { channels: {}, roles: {}, itemRoles: {} };
 }
 
 function setChannel(guildId, eventType, channelId) {
@@ -52,8 +53,16 @@ function clearRole(guildId, eventType) {
   db.unset(`guilds.${guildId}.roles.${eventType}`).write();
 }
 
+function setItemRole(guildId, itemName, roleId) {
+  db.set(`guilds.${guildId}.itemRoles.${itemName}`, roleId).write();
+}
+
+function clearItemRole(guildId, itemName) {
+  db.unset(`guilds.${guildId}.itemRoles.${itemName}`).write();
+}
+
 function allGuildConfigs() {
   return db.get("guilds").value() || {};
 }
 
-module.exports = { getGuildConfig, setChannel, getChannel, setRole, clearRole, allGuildConfigs };
+module.exports = { getGuildConfig, setChannel, getChannel, setRole, clearRole, setItemRole, clearItemRole, allGuildConfigs };
