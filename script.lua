@@ -744,101 +744,55 @@ end
 -- WEATHER
 -- ================================================================
 
-local WeatherNames = {
-
-    "Night",
-    "Rain",
-    "Snowy",
-    "Zen",
-    "Meteor Shower",
-    "Red Sun",
-    "Heatwave",
-    "Glitch",
-    "Thunder",
-    "Reverse Sun",
-    "Taco Rain",
-    "Blizzard"
-
-}
-
 local function identifyWeather()
 
+    -- The old approach scanned ALL of MainGui's text for literal
+    -- matches against every possible weather name — which was
+    -- too broad and was picking up unrelated UI (a weather
+    -- list/menu, not what's actually active), causing 8-10
+    -- "active" weathers to be reported at once when really only
+    -- 1-2 were. ACTIVE_WEATHERS is the same kind of authoritative
+    -- server-driven signal that fixed the merchant scanner —
+    -- trust it directly instead of guessing from GUI text.
+
+    local weatherValue =
+        ServerInfo:FindFirstChild("ACTIVE_WEATHERS")
+
+    if not weatherValue then
+
+        warn("[CVP] ServerInfo.ACTIVE_WEATHERS not found — can't determine active weather.")
+
+        return nil
+
+    end
+
+    local raw = weatherValue.Value
+
+    if raw == nil or raw == "" then
+        return nil
+    end
+
     local found = {}
-    local foundSet = {}
 
-    local function addWeather(name)
+    if typeof(raw) == "string" then
 
-        if name and not foundSet[name] then
-            foundSet[name] = true
-            table.insert(found, name)
-        end
+        -- Handles a single name or a delimited list — comma,
+        -- semicolon, or "+" are the most common separators for
+        -- this kind of value.
+        for name in raw:gmatch("[^,;+]+") do
 
-    end
+            name = name:match("^%s*(.-)%s*$")
 
-    -- Sky-based (the game's primary ambient weather — usually
-    -- just one, but doesn't rule out additional concurrent
-    -- weather labels shown in the GUI below)
-
-    local sky = Lighting:FindFirstChildWhichIsA("Sky")
-
-    if sky then
-
-        local profiles =
-            MainGui:FindFirstChild("WeatherHandler")
-
-        if profiles then
-
-            profiles =
-                profiles:FindFirstChild("Profiles")
-
-        end
-
-        if profiles then
-
-            for _, profile in ipairs(profiles:GetChildren()) do
-
-                local profileSky =
-                    profile:FindFirstChildWhichIsA("Sky")
-
-                if profileSky then
-
-                    if profileSky.SkyboxBk == sky.SkyboxBk
-                        and profileSky.SkyboxDn == sky.SkyboxDn
-                        and profileSky.SkyboxFt == sky.SkyboxFt
-                        and profileSky.SkyboxLf == sky.SkyboxLf
-                        and profileSky.SkyboxRt == sky.SkyboxRt
-                        and profileSky.SkyboxUp == sky.SkyboxUp then
-
-                        if profile.Name ~= "Default" then
-
-                            addWeather(profile.Name)
-
-                        end
-
-                    end
-
-                end
-
+            if name ~= "" then
+                table.insert(found, name)
             end
 
         end
 
-    end
+    elseif typeof(raw) == "table" then
 
-    -- GUI text — catches ALL currently active weather labels,
-    -- not just the first match, since 2+ weathers can be active
-    -- at the same time (e.g. Thunder AND Rain together).
-
-    for _, object in ipairs(getTextObjects(MainGui)) do
-
-        for _, weatherName in ipairs(WeatherNames) do
-
-            if object.Text == weatherName then
-
-                addWeather(weatherName)
-
-            end
-
+        for _, name in ipairs(raw) do
+            table.insert(found, tostring(name))
         end
 
     end
@@ -846,6 +800,11 @@ local function identifyWeather()
     if #found == 0 then
         return nil
     end
+
+    print(
+        "[CVP] Weather scan result — active: " ..
+        table.concat(found, ", ")
+    )
 
     return { names = found }
 
