@@ -3,6 +3,12 @@
 // state always comes from the Railway API, never from here.
 
 const WEATHER_INFO = {
+  "Sunny": {
+    color: 0xFFD966,
+    description: "Clear skies — no special weather event active right now.",
+    mutation: null,
+    mutationChance: null,
+  },
   "Night": {
     color: 0x352AD9,
     description: "It is night time. Chance for plants, eggs and capybaras to mutate to Moonlit.",
