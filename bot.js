@@ -1815,14 +1815,6 @@ let lastState = {
     merchantName: null,
     weather: [],
 
-    // Per-item availability, tracked ONLY to detect which
-    // specific items newly restocked (for individual item role
-    // pings) — does NOT control what the periodic broadcast
-    // shows, that's always the full current stock regardless.
-    eggShop: {},
-    gearShop: {},
-    shopStateInitialized: false,
-
     initialized: false
 };
 
@@ -2166,45 +2158,25 @@ async function broadcastFullShopStock() {
             data.gearShop
         );
 
-    // Track per-item availability purely to know which specific
-    // items are NEWLY in stock this cycle (for individual item
-    // role pings) — doesn't affect what the embed shows, that's
-    // always the full current stock regardless.
-    function computeNewlyInStock(items, stateKey) {
+    // Ping item-specific roles for every item that's actually
+    // in stock THIS broadcast — not just the exact moment it
+    // flips from out-of-stock to in-stock. Since this only fires
+    // once per 5 minutes anyway (not a continuous poll), there's
+    // no spam risk, and it matches what people actually expect:
+    // "ping me whenever this item shows up in a restock."
+    const inStockEggNames =
+        eggItems
+            .filter(item =>
+                stockIsAvailable(item.stock)
+            )
+            .map(item => item.name);
 
-        const newly = [];
-
-        for (const item of items) {
-
-            const wasAvailable =
-                lastState[stateKey][item.name] ||
-                false;
-
-            const isAvailable =
-                stockIsAvailable(item.stock);
-
-            if (
-                isAvailable &&
-                !wasAvailable &&
-                lastState.shopStateInitialized
-            ) {
-                newly.push(item.name);
-            }
-
-            lastState[stateKey][item.name] =
-                isAvailable;
-        }
-
-        return newly;
-    }
-
-    const newlyEggNames =
-        computeNewlyInStock(eggItems, "eggShop");
-
-    const newlyGearNames =
-        computeNewlyInStock(gearItems, "gearShop");
-
-    lastState.shopStateInitialized = true;
+    const inStockGearNames =
+        gearItems
+            .filter(item =>
+                stockIsAvailable(item.stock)
+            )
+            .map(item => item.name);
 
     const eggEmbed =
         buildStockEmbed(
@@ -2221,7 +2193,7 @@ async function broadcastFullShopStock() {
     await broadcast(
         "eggShop",
         eggEmbed,
-        newlyEggNames
+        inStockEggNames
     );
 
     const gearEmbed =
@@ -2239,7 +2211,7 @@ async function broadcastFullShopStock() {
     await broadcast(
         "gearShop",
         gearEmbed,
-        newlyGearNames
+        inStockGearNames
     );
 }
 
