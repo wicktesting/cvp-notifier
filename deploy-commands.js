@@ -1,310 +1,235 @@
-require("dotenv").config();
+require('dotenv').config?.();
 
 const {
-    REST,
-    Routes,
-    SlashCommandBuilder,
-    PermissionFlagsBits
-} = require("discord.js");
-
-// ============================================================
-// CVP NOTIFIER — DISCORD SLASH COMMAND REGISTRATION
-// ============================================================
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  ChannelType
+} = require('discord.js');
 
 const commands = [
 
-    // --------------------------------------------------------
-    // /eggshop
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("eggshop")
-        .setDescription("Show the current Egg Shop stock"),
+  new SlashCommandBuilder()
+    .setName('eggshop')
+    .setDescription(
+      'Show the current Egg Shop'
+    ),
 
-    // --------------------------------------------------------
-    // /gearshop
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("gearshop")
-        .setDescription("Show the current Gear Shop stock"),
+  new SlashCommandBuilder()
+    .setName('gearshop')
+    .setDescription(
+      'Show the current Gear Shop'
+    ),
 
-    // --------------------------------------------------------
-    // /merchant
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("merchant")
-        .setDescription("Show the current Traveling Merchant status and stock"),
+  new SlashCommandBuilder()
+    .setName('merchant')
+    .setDescription(
+      'Show the Traveling Merchant'
+    ),
 
-    // --------------------------------------------------------
-    // /weather
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("weather")
-        .setDescription("Show the current in-game weather"),
+  new SlashCommandBuilder()
+    .setName('weather')
+    .setDescription(
+      'Show the current weather'
+    ),
 
-    // --------------------------------------------------------
-    // /stock
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("stock")
-        .setDescription(
-            "Show a full overview: Egg Shop, Gear Shop, Merchant, and Weather"
-        ),
+  /*
+   * NEW
+   */
 
-    // --------------------------------------------------------
-    // /setchannel
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("setchannel")
-        .setDescription(
-            "Set the channel for a specific notification type"
-        )
-        .addStringOption((option) =>
-            option
-                .setName("event")
-                .setDescription("Notification type")
-                .setRequired(true)
-                .addChoices(
-                    {
-                        name: "Egg Shop",
-                        value: "eggShop"
-                    },
-                    {
-                        name: "Gear Shop",
-                        value: "gearShop"
-                    },
-                    {
-                        name: "Traveling Merchant",
-                        value: "merchant"
-                    },
-                    {
-                        name: "Weather",
-                        value: "weather"
-                    }
-                )
-        )
-        .addChannelOption((option) =>
-            option
-                .setName("channel")
-                .setDescription("Notification channel")
-                .setRequired(true)
-        )
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild
-        ),
+  new SlashCommandBuilder()
+    .setName('drcarrot')
+    .setDescription(
+      'Show the Dr. Carrot Scrap Shop'
+    ),
 
-    // --------------------------------------------------------
-    // /setrole
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("setrole")
-        .setDescription(
-            "Set a role to ping for a specific notification type"
-        )
-        .addStringOption((option) =>
-            option
-                .setName("event")
-                .setDescription("Which notification type")
-                .setRequired(true)
-                .addChoices(
-                    {
-                        name: "Egg Shop",
-                        value: "eggShop"
-                    },
-                    {
-                        name: "Gear Shop",
-                        value: "gearShop"
-                    },
-                    {
-                        name: "Traveling Merchant",
-                        value: "merchant"
-                    },
-                    {
-                        name: "Weather",
-                        value: "weather"
-                    }
-                )
-        )
-        .addRoleOption((option) =>
-            option
-                .setName("role")
-                .setDescription("Role to ping")
-                .setRequired(true)
-        )
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild
-        ),
+  new SlashCommandBuilder()
+    .setName('stock')
+    .setDescription(
+      'Show all tracked CVP stock'
+    ),
 
-    // --------------------------------------------------------
-    // /clearrole
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("clearrole")
-        .setDescription(
-            "Remove the ping role for a specific notification type"
-        )
-        .addStringOption((option) =>
-            option
-                .setName("event")
-                .setDescription("Which notification type")
-                .setRequired(true)
-                .addChoices(
-                    {
-                        name: "Egg Shop",
-                        value: "eggShop"
-                    },
-                    {
-                        name: "Gear Shop",
-                        value: "gearShop"
-                    },
-                    {
-                        name: "Traveling Merchant",
-                        value: "merchant"
-                    },
-                    {
-                        name: "Weather",
-                        value: "weather"
-                    }
-                )
-        )
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild
-        ),
+  new SlashCommandBuilder()
+    .setName('setchannel')
+    .setDescription(
+      'Set the notification channel'
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageGuild
+    )
+    .addChannelOption(
+      option =>
+        option
+          .setName('channel')
+          .setDescription(
+            'Notification channel'
+          )
+          .setRequired(true)
+          .addChannelTypes(
+            ChannelType.GuildText
+          )
+    ),
 
-    // --------------------------------------------------------
-    // /settings
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("settings")
-        .setDescription(
-            "View this server's current notification channel and role config"
-        )
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild
-        )
+  new SlashCommandBuilder()
+    .setName('setrole')
+    .setDescription(
+      'Set a notification role'
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageGuild
+    )
+    .addStringOption(
+      option =>
+        option
+          .setName('event')
+          .setDescription(
+            'Notification type'
+          )
+          .setRequired(true)
+          .addChoices(
 
-].map((command) => command.toJSON());
+            {
+              name: 'Egg Shop',
+              value: 'eggshop'
+            },
 
-// ============================================================
-// ENVIRONMENT VARIABLES
-// ============================================================
+            {
+              name: 'Gear Shop',
+              value: 'gearshop'
+            },
 
-const token = process.env.DISCORD_BOT_TOKEN;
-const clientId = process.env.DISCORD_CLIENT_ID;
-const guildId = process.env.DISCORD_TEST_GUILD_ID;
+            {
+              name: 'Merchant',
+              value: 'merchant'
+            },
 
-// ============================================================
-// VALIDATION
-// ============================================================
+            {
+              name: 'Weather',
+              value: 'weather'
+            },
 
-if (!token) {
-    console.error(
-        "❌ DISCORD_BOT_TOKEN is missing from Railway Variables."
-    );
-    process.exit(1);
-}
+            {
+              name: 'Dr. Carrot',
+              value: 'drcarrot'
+            }
+          )
+    )
+    .addRoleOption(
+      option =>
+        option
+          .setName('role')
+          .setDescription(
+            'Role to ping'
+          )
+          .setRequired(true)
+    ),
 
-if (!clientId) {
-    console.error(
-        "❌ DISCORD_CLIENT_ID is missing from Railway Variables."
-    );
-    process.exit(1);
-}
+  new SlashCommandBuilder()
+    .setName('clearrole')
+    .setDescription(
+      'Clear a notification role'
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageGuild
+    )
+    .addStringOption(
+      option =>
+        option
+          .setName('event')
+          .setDescription(
+            'Notification type'
+          )
+          .setRequired(true)
+          .addChoices(
 
-// ============================================================
-// DISCORD REST CLIENT
-// ============================================================
+            {
+              name: 'Egg Shop',
+              value: 'eggshop'
+            },
 
-const rest = new REST({
-    version: "10"
-}).setToken(token);
+            {
+              name: 'Gear Shop',
+              value: 'gearshop'
+            },
 
-// ============================================================
-// REGISTER COMMANDS
-// ============================================================
+            {
+              name: 'Merchant',
+              value: 'merchant'
+            },
+
+            {
+              name: 'Weather',
+              value: 'weather'
+            },
+
+            {
+              name: 'Dr. Carrot',
+              value: 'drcarrot'
+            }
+          )
+    ),
+
+  new SlashCommandBuilder()
+    .setName('settings')
+    .setDescription(
+      'Show notifier settings'
+    )
+
+].map(
+  command =>
+    command.toJSON()
+);
 
 (async () => {
 
-    try {
+  if (
+    !process.env.DISCORD_BOT_TOKEN ||
+    !process.env.DISCORD_CLIENT_ID
+  ) {
+    throw new Error(
+      'Missing DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID'
+    );
+  }
 
-        console.log("==========================================");
-        console.log("CVP NOTIFIER — COMMAND REGISTRATION");
-        console.log("==========================================");
+  const rest =
+    new REST({
+      version: '10'
+    }).setToken(
+      process.env.DISCORD_BOT_TOKEN
+    );
 
-        console.log(`Application ID: ${clientId}`);
-        console.log(`Commands: ${commands.length}`);
+  const guild =
+    process.env.DISCORD_TEST_GUILD_ID;
 
-        if (guildId) {
+  if (guild) {
 
-            console.log(`Guild ID: ${guildId}`);
-            console.log("Registration type: SERVER / GUILD");
-            console.log("Registering commands...");
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.DISCORD_CLIENT_ID,
+        guild
+      ),
+      {
+        body: commands
+      }
+    );
 
-            await rest.put(
-                Routes.applicationGuildCommands(
-                    clientId,
-                    guildId
-                ),
-                {
-                    body: commands
-                }
-            );
+  } else {
 
-            console.log("");
-            console.log("✅ COMMANDS REGISTERED SUCCESSFULLY!");
-            console.log(
-                `✅ ${commands.length} commands registered to your server.`
-            );
-            console.log("They should appear immediately in Discord.");
+    await rest.put(
+      Routes.applicationCommands(
+        process.env.DISCORD_CLIENT_ID
+      ),
+      {
+        body: commands
+      }
+    );
+  }
 
-        } else {
+  console.log(
+    `Registered ${commands.length} commands.`
+  );
 
-            console.log("⚠️ DISCORD_TEST_GUILD_ID is not set.");
-            console.log("Registering commands globally instead.");
-            console.log(
-                "Global commands can take time to appear."
-            );
-
-            await rest.put(
-                Routes.applicationCommands(clientId),
-                {
-                    body: commands
-                }
-            );
-
-            console.log("");
-            console.log("✅ GLOBAL COMMANDS REGISTERED!");
-            console.log(
-                `✅ ${commands.length} commands registered globally.`
-            );
-        }
-
-        console.log("");
-        console.log("Registered commands:");
-
-        for (const command of commands) {
-            console.log(`  /${command.name}`);
-        }
-
-        console.log("");
-        console.log("==========================================");
-
-    } catch (error) {
-
-        console.error("");
-        console.error("❌ COMMAND REGISTRATION FAILED");
-        console.error("==========================================");
-
-        console.error(error);
-
-        if (error?.rawError) {
-            console.error("");
-            console.error("Discord API error:");
-            console.error(error.rawError);
-        }
-
-        console.error("==========================================");
-
-        process.exit(1);
-    }
-
-})();
+})().catch(
+  console.error
+);
