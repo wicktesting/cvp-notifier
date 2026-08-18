@@ -2,67 +2,282 @@ const low = require("lowdb");
 const FileSync = require("lowdb/adapters/FileSync");
 const path = require("path");
 
-// If DB_PATH is set (pointing at a mounted Railway Volume, e.g.
-// /data/db.json), settings survive redeploys. Otherwise this
-// falls back to a file next to the code, which Railway WIPES on
-// every redeploy — fine for quick local testing, but you'll lose
-// /setchannel and /setrole settings every time you push a change.
-const dbFilePath =
-    process.env.DB_PATH ||
-    path.join(__dirname, "db.json");
+const adapter =
+    new FileSync(
+        path.join(
+            __dirname,
+            "db.json"
+        )
+    );
 
-const adapter = new FileSync(dbFilePath);
-const db = low(adapter);
+const db =
+    low(adapter);
 
-console.log(
-    `💾 Settings storage: ${dbFilePath}` +
-    (
-        process.env.DB_PATH
-            ? " (persistent volume)"
-            : " (⚠️ NOT persistent — wiped on redeploy, set DB_PATH to fix)"
-    )
-);
 
-// Structure:
-// guilds: {
-//   "<guildId>": {
-//     channels: { eggShop: "channelId", gearShop: "channelId", merchant: "channelId", weather: "channelId" },
-//     roles: { eggShop: "roleId", gearShop: "roleId", merchant: "roleId", weather: "roleId" },
-//     itemRoles: { "Angel Capybara Egg": "roleId", "Thunder": "roleId", ... }
-//   }
-// }
-db.defaults({ guilds: {} }).write();
+// ============================================================
+// DEFAULT STRUCTURE
+// ============================================================
 
-function getGuildConfig(guildId) {
-  return db.get(`guilds.${guildId}`).value() || { channels: {}, roles: {}, itemRoles: {} };
+db.defaults({
+    guilds: {}
+}).write();
+
+
+// ============================================================
+// NORMALIZE CONFIG
+// ============================================================
+
+function normalizeConfig(
+    guildId
+) {
+
+    let config =
+        db.get(
+            `guilds.${guildId}`
+        ).value();
+
+    if (!config) {
+
+        config = {
+            channels: {},
+            roles: {},
+            itemRoles: {}
+        };
+
+        db.set(
+            `guilds.${guildId}`,
+            config
+        ).write();
+
+        return config;
+
+    }
+
+
+    // --------------------------------------------------------
+    // Migrate old channelId format.
+    // --------------------------------------------------------
+
+    if (
+        config.channelId &&
+        !config.channels
+    ) {
+
+        config.channels = {
+
+            eggShop:
+                config.channelId,
+
+            gearShop:
+                config.channelId,
+
+            merchant:
+                config.channelId,
+
+            weather:
+                config.channelId
+
+        };
+
+    }
+
+
+    if (!config.channels) {
+        config.channels = {};
+    }
+
+    if (!config.roles) {
+        config.roles = {};
+    }
+
+    if (!config.itemRoles) {
+        config.itemRoles = {};
+    }
+
+
+    db.set(
+        `guilds.${guildId}`,
+        config
+    ).write();
+
+
+    return config;
+
 }
 
-function setChannel(guildId, eventType, channelId) {
-  db.set(`guilds.${guildId}.channels.${eventType}`, channelId).write();
+
+// ============================================================
+// GET GUILD CONFIG
+// ============================================================
+
+function getGuildConfig(
+    guildId
+) {
+
+    return normalizeConfig(
+        guildId
+    );
+
 }
 
-function getChannel(guildId, eventType) {
-  return db.get(`guilds.${guildId}.channels.${eventType}`).value() || null;
+
+// ============================================================
+// SET CHANNEL
+// ============================================================
+
+function setChannel(
+    guildId,
+    eventType,
+    channelId
+) {
+
+    normalizeConfig(
+        guildId
+    );
+
+    db.set(
+        `guilds.${guildId}.channels.${eventType}`,
+        channelId
+    ).write();
+
 }
 
-function setRole(guildId, eventType, roleId) {
-  db.set(`guilds.${guildId}.roles.${eventType}`, roleId).write();
+
+// ============================================================
+// SET CATEGORY ROLE
+// ============================================================
+
+function setRole(
+    guildId,
+    eventType,
+    roleId
+) {
+
+    normalizeConfig(
+        guildId
+    );
+
+    db.set(
+        `guilds.${guildId}.roles.${eventType}`,
+        roleId
+    ).write();
+
 }
 
-function clearRole(guildId, eventType) {
-  db.unset(`guilds.${guildId}.roles.${eventType}`).write();
+
+// ============================================================
+// CLEAR CATEGORY ROLE
+// ============================================================
+
+function clearRole(
+    guildId,
+    eventType
+) {
+
+    normalizeConfig(
+        guildId
+    );
+
+    db.unset(
+        `guilds.${guildId}.roles.${eventType}`
+    ).write();
+
 }
 
-function setItemRole(guildId, itemName, roleId) {
-  db.set(`guilds.${guildId}.itemRoles.${itemName}`, roleId).write();
+
+// ============================================================
+// SET INDIVIDUAL ITEM ROLE
+// ============================================================
+
+function setItemRole(
+    guildId,
+    itemName,
+    roleId
+) {
+
+    normalizeConfig(
+        guildId
+    );
+
+    db.set(
+        `guilds.${guildId}.itemRoles.${itemName}`,
+        roleId
+    ).write();
+
 }
 
-function clearItemRole(guildId, itemName) {
-  db.unset(`guilds.${guildId}.itemRoles.${itemName}`).write();
+
+// ============================================================
+// CLEAR INDIVIDUAL ITEM ROLE
+// ============================================================
+
+function clearItemRole(
+    guildId,
+    itemName
+) {
+
+    normalizeConfig(
+        guildId
+    );
+
+    db.unset(
+        `guilds.${guildId}.itemRoles.${itemName}`
+    ).write();
+
 }
+
+
+// ============================================================
+// ALL GUILD CONFIGS
+// ============================================================
 
 function allGuildConfigs() {
-  return db.get("guilds").value() || {};
+
+    const guilds =
+        db.get(
+            "guilds"
+        ).value()
+        || {};
+
+    for (
+        const guildId
+        of Object.keys(guilds)
+    ) {
+
+        normalizeConfig(
+            guildId
+        );
+
+    }
+
+    return (
+        db.get(
+            "guilds"
+        ).value()
+        || {}
+    );
+
 }
 
-module.exports = { getGuildConfig, setChannel, getChannel, setRole, clearRole, setItemRole, clearItemRole, allGuildConfigs };
+
+// ============================================================
+// EXPORT
+// ============================================================
+
+module.exports = {
+
+    getGuildConfig,
+
+    setChannel,
+
+    setRole,
+
+    clearRole,
+
+    setItemRole,
+
+    clearItemRole,
+
+    allGuildConfigs
+
+};
