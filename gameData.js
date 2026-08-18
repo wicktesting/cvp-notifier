@@ -1,109 +1,181 @@
-// Static reference data compiled from the CVP Game Information Master file.
-// Used only to enrich Discord embeds (colors, descriptions) — live stock/merchant/weather
-// state always comes from the Railway API, never from here.
+const RARITY_ORDER = [
+  'Common',
+  'Rare',
+  'Epic',
+  'Legendary',
+  'Mythic',
+  'Divine',
+  'Godly',
+  'Secret'
+];
 
-const WEATHER_INFO = {
-  "Sunny": {
-    color: 0xFFD966,
-    description: "Clear skies — no special weather event active right now.",
-    mutation: null,
-    mutationChance: null,
-  },
-  "Night": {
-    color: 0x352AD9,
-    description: "It is night time. Chance for plants, eggs and capybaras to mutate to Moonlit.",
-    mutation: "Moonlit",
-    mutationChance: 0.325,
-  },
-  "Rain": {
-    color: 0x627C7C,
-    description: "Rain starts to fall. +25% faster plant spawnrate!",
-    mutation: null,
-    mutationChance: null,
-  },
-  "Snowy": {
-    color: 0xD8F4F4,
-    description: "Snow sprinkles down! Chance for plants, eggs and capybaras to mutate to Chilly.",
-    mutation: "Chilly",
-    mutationChance: 0.3,
-  },
-  "Zen": {
-    color: 0xD0C0AD,
-    description: "A serene calm falls over the landscape. Chance to mutate to Tranquil.",
-    mutation: "Tranquil",
-    mutationChance: 0.26,
-  },
-  "Meteor Shower": {
-    color: 0x9022DF,
-    description: "The night sky is bright! Chance to upgrade Moonlit to Celestial.",
-    mutation: "Celestial",
-    mutationChance: 0.25,
-  },
-  "Red Sun": {
-    color: 0xF12906,
-    description: "The sun blares red. Toasty has a chance to upgrade to Scorched.",
-    mutation: "Scorched",
-    mutationChance: 0.275,
-  },
-  "Heatwave": {
-    color: 0xFFB115,
-    description: "Sluggish and sweaty. Chance to mutate to Toasty.",
-    mutation: "Toasty",
-    mutationChance: 0.275,
-  },
-  "Glitch": {
-    color: 0x000000,
-    description: "I'm not sure what's happening... Chance to mutate to Glitched.",
-    mutation: "Glitched",
-    mutationChance: 0.25,
-  },
-  "Thunder": {
-    color: 0xFFFF00,
-    description: "Thunder and lightning! Chance to mutate to Shocked.",
-    mutation: "Shocked",
-    mutationChance: 0.325,
-  },
-  "Reverse Sun": {
-    color: 0x00F114,
-    description: "The sun feels... cold on your skin? Chance to mutate to Flipped.",
-    mutation: "Flipped",
-    mutationChance: 0.45,
-  },
-  "Taco Rain": {
-    color: 0xFFCF60,
-    description: "IT'S RAINING TACOS!!! Chance to mutate to Taco!",
-    mutation: "Taco",
-    mutationChance: 0.45,
-  },
-  "Blizzard": {
-    color: 0x1859F1,
-    description: "So cold you can't feel your face! Chilly has a chance to upgrade to Permafrost.",
-    mutation: "Permafrost",
-    mutationChance: 0.275,
-  },
-};
+function stockNumber(value) {
+  if (typeof value === 'number') return value;
 
-const RARITY_COLORS = {
-  "Common": 0x9E9E9E,
-  "Rare": 0x3B82F6,
-  "Epic": 0x8B5CF6,
-  "Legendary": 0xEAB308,
-  "Mythic": 0xEC4899,
-  "Divine": 0x22D3EE,
-  "Godly": 0xF43F5E,
-  "Secret": 0x111111,
-  "Premium": 0xFACC15,
-  "Exclusive": 0xF97316,
-  "Limited": 0xA855F7,
-  "BOSS": 0x7F1D1D,
-};
+  if (typeof value !== 'string') return null;
 
-function rarityColor(rarity) {
-  return RARITY_COLORS[rarity] || 0x2B2D31;
+  const match =
+    value.match(/[xX]\s*(\d+)/) ||
+    value.match(/(\d+)\s*in stock/i);
+
+  if (match) return Number(match[1]);
+
+  if (
+    /no stock|out of stock|sold out/i.test(value)
+  ) {
+    return 0;
+  }
+
+  return null;
 }
 
-function weatherInfo(name) {
-  return WEATHER_INFO[name] || null;
+function normalizeStockList(list) {
+  if (!Array.isArray(list)) return [];
+
+  return list.map((x) => ({
+    name:
+      x?.name ??
+      x?.itemName ??
+      x?.title ??
+      'Unknown',
+
+    stock:
+      x?.stock ??
+      x?.value ??
+      null,
+
+    cost:
+      x?.cost ??
+      x?.price ??
+      null,
+
+    rarity:
+      x?.rarity ??
+      null,
+
+    description:
+      x?.description ??
+      null
+  }));
 }
 
-module.exports = { WEATHER_INFO, RARITY_COLORS, rarityColor, weatherInfo };
+function normalizeMerchant(merchant) {
+  if (!merchant) return null;
+
+  return {
+    name: merchant.name ?? 'Traveling Merchant',
+    timeLeft: merchant.timeLeft ?? null,
+    items: normalizeStockList(
+      merchant.items ?? []
+    )
+  };
+}
+
+function normalizeWeather(weather) {
+  if (!weather) return null;
+
+  if (typeof weather === 'string') {
+    return weather;
+  }
+
+  return (
+    weather.name ??
+    weather.weather ??
+    weather.type ??
+    null
+  );
+}
+
+/*
+ * Dr. Carrot Scrap Shop
+ *
+ * The Roblox client receives:
+ *
+ * ThemePurchases = table
+ * Stock = table
+ * Theme = DrCarrot
+ * RestockUntil = number
+ *
+ * Stock values can themselves be nested tables,
+ * so the notifier intentionally keeps both:
+ *   - the item name
+ *   - the original value
+ */
+
+function normalizeDrCarrot(dr) {
+  if (!dr || typeof dr !== 'object') {
+    return null;
+  }
+
+  const rawStock =
+    dr.stock ??
+    dr.Stock ??
+    {};
+
+  const stock = Array.isArray(rawStock)
+    ? rawStock
+    : Object.entries(rawStock).map(
+        ([name, value]) => ({
+          name,
+          value
+        })
+      );
+
+  return {
+    theme:
+      dr.theme ??
+      dr.Theme ??
+      'DrCarrot',
+
+    restockUntil:
+      dr.restockUntil ??
+      dr.RestockUntil ??
+      null,
+
+    themePurchases:
+      dr.themePurchases ??
+      dr.ThemePurchases ??
+      null,
+
+    stock: stock.map((x) => ({
+      name:
+        x.name ??
+        x.itemName ??
+        x.title ??
+        'Unknown',
+
+      value:
+        x.value ??
+        x.stock ??
+        x.amount ??
+        null,
+
+      stock:
+        x.stock ??
+        null,
+
+      cost:
+        x.cost ??
+        x.price ??
+        x.scrapCost ??
+        null,
+
+      rarity:
+        x.rarity ??
+        null,
+
+      description:
+        x.description ??
+        null
+    }))
+  };
+}
+
+module.exports = {
+  RARITY_ORDER,
+  stockNumber,
+  normalizeStockList,
+  normalizeMerchant,
+  normalizeWeather,
+  normalizeDrCarrot
+};
