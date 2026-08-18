@@ -1,48 +1,30 @@
--- ╔═══════════════════════════════════════════════════════════════╗
--- ║        Capybaras vs Plants — Stock Notifier                  ║
--- ║        Roblox → Railway                                     ║
--- ╚═══════════════════════════════════════════════════════════════╝
+-- CVP Notifier
+-- Dr. Carrot Scrap Shop support
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
-local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
-local MainGui = PlayerGui:WaitForChild("MainGui")
-
--- Used by the merchant scanner below — a live server-side flag
--- plus the real remotes the server uses to push merchant state,
--- far more reliable than guessing via GUI text scraping.
-local ServerInfo = ReplicatedStorage:WaitForChild("ServerInfo")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
--- ================================================================
--- CONFIG
--- ================================================================
-
 local API_URL = "https://cvp-notifier-production.up.railway.app/api/update"
-
 local API_KEY = ""
-
 local SCAN_EVERY = 2
 
--- ================================================================
--- CLEAN OLD GUI
--- ================================================================
+local requestFunction =
+    request
+    or http_request
+    or (syn and syn.request)
+    or (http and http.request)
 
-local oldGui = PlayerGui:FindFirstChild("CVPNotifier")
-
-if oldGui then
-    oldGui:Destroy()
+if not requestFunction then
+    warn("CVP Notifier: HTTP request function not found")
+    return
 end
 
--- ================================================================
--- HTTP FUNCTION
--- ================================================================
-
-local function sendRequest(url, body)
+local function post(data)
+    data.updatedAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
     local headers = {
         ["Content-Type"] = "application/json"
@@ -52,338 +34,407 @@ local function sendRequest(url, body)
         headers["X-Api-Key"] = API_KEY
     end
 
-    local requestFunction =
-        request
-        or http_request
-        or (syn and syn.request)
-        or (http and http.request)
-
-    if not requestFunction then
-        return false, "No HTTP request function found"
-    end
-
-    local success, response = pcall(function()
-
+    local ok, response = pcall(function()
         return requestFunction({
-            Url = url,
+            Url = API_URL,
             Method = "POST",
             Headers = headers,
-            Body = body
+            Body = HttpService:JSONEncode(data)
         })
-
     end)
 
-    if not success then
+    if not ok then
         return false, tostring(response)
     end
 
-    if not response then
-        return false, "No response"
-    end
+    local status = tonumber(
+        response and (response.StatusCode or response.Status) or 0
+    ) or 0
 
-    local statusCode = response.StatusCode or response.Status or 0
-
-    if tonumber(statusCode) and tonumber(statusCode) >= 200
-        and tonumber(statusCode) < 300 then
-
-        return true, response.Body or ""
-
-    end
-
-    return false,
-        "HTTP " ..
-        tostring(statusCode) ..
-        " " ..
-        tostring(response.Body or "")
-
+    return status >= 200 and status < 300,
+        response and response.Body or ""
 end
 
--- ================================================================
--- GUI
--- ================================================================
+--------------------------------------------------
+-- Generic helpers
+--------------------------------------------------
 
-local ScreenGui = Instance.new("ScreenGui")
+local function copyValue(value, depth, seen)
+    depth = depth or 0
+    seen = seen or {}
 
-ScreenGui.Name = "CVPNotifier"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    if depth > 8 then
+        return "<max depth>"
+    end
 
-ScreenGui.Parent = PlayerGui
+    local valueType = typeof(value)
 
-local Frame = Instance.new("Frame")
+    if valueType == "string"
+        or valueType == "number"
+        or valueType == "boolean" then
+        return value
+    end
 
-Frame.Size = UDim2.new(0, 320, 0, 125)
-Frame.Position = UDim2.new(1, -330, 1, -135)
+    if valueType ~= "table" then
+        return tostring(value)
+    end
 
-Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+    if seen[value] then
+        return "<cycle>"
+    end
 
-Frame.BorderSizePixel = 0
+    seen[value] = true
 
-Frame.Parent = ScreenGui
+    local result = {}
 
-Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+    for key, child in pairs(value) do
+        result[tostring(key)] = copyValue(child, depth + 1, seen)
+    end
 
-local Stroke = Instance.new("UIStroke", Frame)
+    seen[value] = nil
 
-Stroke.Color = Color3.fromRGB(50, 50, 70)
-Stroke.Thickness = 1.5
-
-local Title = Instance.new("TextLabel", Frame)
-
-Title.Size = UDim2.new(1, -20, 0, 22)
-Title.Position = UDim2.new(0, 10, 0, 7)
-
-Title.BackgroundTransparency = 1
-
-Title.Text = "🐾 CVP Notifier"
-
-Title.TextColor3 = Color3.fromRGB(235, 235, 255)
-
-Title.TextSize = 14
-Title.Font = Enum.Font.GothamBold
-
-Title.TextXAlignment = Enum.TextXAlignment.Left
-
-local Status = Instance.new("TextLabel", Frame)
-
-Status.Size = UDim2.new(1, -20, 0, 20)
-Status.Position = UDim2.new(0, 10, 0, 31)
-
-Status.BackgroundTransparency = 1
-
-Status.Text = "Starting..."
-
-Status.TextColor3 = Color3.fromRGB(160, 160, 180)
-
-Status.TextSize = 11
-Status.Font = Enum.Font.Gotham
-
-Status.TextXAlignment = Enum.TextXAlignment.Left
-
-local DataLabel = Instance.new("TextLabel", Frame)
-
-DataLabel.Size = UDim2.new(1, -20, 0, 50)
-DataLabel.Position = UDim2.new(0, 10, 0, 54)
-
-DataLabel.BackgroundTransparency = 1
-
-DataLabel.Text = ""
-
-DataLabel.TextColor3 = Color3.fromRGB(100, 210, 130)
-
-DataLabel.TextSize = 10
-DataLabel.Font = Enum.Font.Gotham
-
-DataLabel.TextXAlignment = Enum.TextXAlignment.Left
-DataLabel.TextYAlignment = Enum.TextYAlignment.Top
-
-DataLabel.TextWrapped = true
-
-local Close = Instance.new("TextButton", Frame)
-
-Close.Size = UDim2.new(0, 22, 0, 22)
-
-Close.Position = UDim2.new(1, -27, 0, 5)
-
-Close.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-
-Close.BorderSizePixel = 0
-
-Close.Text = "X"
-
-Close.TextColor3 = Color3.new(1, 1, 1)
-
-Close.TextSize = 11
-Close.Font = Enum.Font.GothamBold
-
-Instance.new("UICorner", Close).CornerRadius = UDim.new(0, 4)
-
-Close.MouseButton1Click:Connect(function()
-
-    ScreenGui:Destroy()
-
-end)
-
--- ================================================================
--- MINIMIZE BUTTON
--- ================================================================
-
-local TweenService = game:GetService("TweenService")
-
-local FULL_HEIGHT = 125
-local MIN_HEIGHT = 36
-
-local Minimize = Instance.new("TextButton", Frame)
-
-Minimize.Size = UDim2.new(0, 22, 0, 22)
-
-Minimize.Position = UDim2.new(1, -53, 0, 5)
-
-Minimize.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-
-Minimize.BorderSizePixel = 0
-
-Minimize.Text = "-"
-
-Minimize.TextColor3 = Color3.new(1, 1, 1)
-
-Minimize.TextSize = 14
-Minimize.Font = Enum.Font.GothamBold
-
-Instance.new("UICorner", Minimize).CornerRadius = UDim.new(0, 4)
-
-local minimized = false
-
-Minimize.MouseButton1Click:Connect(function()
-
-    minimized = not minimized
-
-    Status.Visible = not minimized
-    DataLabel.Visible = not minimized
-
-    Minimize.Text = minimized and "+" or "-"
-
-    local targetHeight =
-        minimized and MIN_HEIGHT or FULL_HEIGHT
-
-    TweenService:Create(
-        Frame,
-        TweenInfo.new(0.18, Enum.EasingStyle.Quad),
-        {
-            Size = UDim2.new(0, 320, 0, targetHeight)
-        }
-    ):Play()
-
-end)
-
--- ================================================================
--- UTILITY
--- ================================================================
-
-local function lower(text)
-
-    return tostring(text):lower()
-
+    return result
 end
 
-local function getTextObjects(root)
+--------------------------------------------------
+-- Dr. Carrot Event Shop
+--------------------------------------------------
 
-    local results = {}
+local latestDrCarrot = nil
+local latestDrCarrotSignature = ""
+
+local eventShopRemote =
+    Remotes:FindFirstChild("UpdateEventShopStock")
+
+local function normalizeDrCarrot(payload)
+    if typeof(payload) ~= "table" then
+        return nil
+    end
+
+    local theme =
+        payload.Theme
+        or payload.theme
+
+    -- Only accept Dr. Carrot's event shop
+    if theme and tostring(theme) ~= "DrCarrot" then
+        return nil
+    end
+
+    local stock =
+        payload.Stock
+        or payload.stock
+        or {}
+
+    local stockList = {}
+
+    if typeof(stock) == "table" then
+        for itemName, itemData in pairs(stock) do
+            stockList[#stockList + 1] = {
+                name = tostring(itemName),
+                value = copyValue(itemData)
+            }
+        end
+    end
+
+    return {
+        theme = tostring(theme or "DrCarrot"),
+
+        restockUntil =
+            payload.RestockUntil
+            or payload.restockUntil,
+
+        themePurchases =
+            copyValue(
+                payload.ThemePurchases
+                or payload.themePurchases
+                or {}
+            ),
+
+        stock = stockList
+    }
+end
+
+local function pushDrCarrot(payload)
+    local shop = normalizeDrCarrot(payload)
+
+    if not shop then
+        return
+    end
+
+    local signature = HttpService:JSONEncode(shop)
+
+    if signature == latestDrCarrotSignature then
+        return
+    end
+
+    latestDrCarrot = shop
+    latestDrCarrotSignature = signature
+
+    post({
+        drCarrot = shop
+    })
+end
+
+--------------------------------------------------
+-- Listen directly to Event Shop stock updates
+--------------------------------------------------
+
+if eventShopRemote
+    and eventShopRemote:IsA("RemoteEvent") then
+
+    eventShopRemote.OnClientEvent:Connect(function(payload)
+        pushDrCarrot(payload)
+    end)
+
+    print("CVP Notifier: UpdateEventShopStock connected")
+else
+    warn(
+        "CVP Notifier: UpdateEventShopStock RemoteEvent not found"
+    )
+end
+
+--------------------------------------------------
+-- GUI fallback
+--------------------------------------------------
+
+local function scrapeDrCarrotGui()
+    local playerGui = Player:FindFirstChild("PlayerGui")
+
+    if not playerGui then
+        return nil
+    end
+
+    local mainGui =
+        playerGui:FindFirstChild("MainGui")
+
+    if not mainGui then
+        return nil
+    end
+
+    local shop =
+        mainGui:FindFirstChild(
+            "DrCarrotShop",
+            true
+        )
+
+    if not shop then
+        return nil
+    end
+
+    local list =
+        shop:FindFirstChild(
+            "List",
+            true
+        )
+
+    if not list then
+        return nil
+    end
+
+    local items = {}
+
+    for _, card in ipairs(list:GetChildren()) do
+
+        if card:IsA("Frame") then
+
+            local title =
+                card:FindFirstChild(
+                    "Title",
+                    true
+                )
+
+            if title
+                and title:IsA("TextLabel")
+                and title.Text ~= "" then
+
+                local stock =
+                    card:FindFirstChild(
+                        "Stock",
+                        true
+                    )
+
+                local rarity =
+                    card:FindFirstChild(
+                        "Rarity",
+                        true
+                    )
+
+                local description =
+                    card:FindFirstChild(
+                        "Description",
+                        true
+                    )
+
+                local buy =
+                    card:FindFirstChild(
+                        "Buy",
+                        true
+                    )
+
+                local cost = nil
+
+                if buy then
+                    local details =
+                        buy:FindFirstChild(
+                            "Details",
+                            true
+                        )
+
+                    if details then
+                        local costLabel =
+                            details:FindFirstChild(
+                                "Cost"
+                            )
+
+                        if costLabel then
+                            cost = costLabel.Text
+                        end
+                    end
+                end
+
+                items[#items + 1] = {
+                    name = title.Text,
+
+                    stock =
+                        stock
+                        and stock.Text
+                        or nil,
+
+                    rarity =
+                        rarity
+                        and rarity.Text
+                        or nil,
+
+                    description =
+                        description
+                        and description.Text
+                        or nil,
+
+                    cost = cost
+                }
+            end
+        end
+    end
+
+    if #items == 0 then
+        return nil
+    end
+
+    return {
+        theme = "DrCarrot",
+        stock = items
+    }
+end
+
+--------------------------------------------------
+-- Existing notifier data
+--------------------------------------------------
+
+local function textObjects(root)
+    local result = {}
 
     if not root then
-        return results
+        return result
     end
 
-    for _, object in ipairs(root:GetDescendants()) do
+    for _, object in ipairs(
+        root:GetDescendants()
+    ) do
 
         if object:IsA("TextLabel")
             or object:IsA("TextButton")
             or object:IsA("TextBox") then
 
-            if object.Text and object.Text ~= "" then
+            if object.Text
+                and object.Text ~= "" then
 
-                table.insert(results, object)
-
+                table.insert(
+                    result,
+                    object
+                )
             end
-
         end
-
     end
 
-    return results
-
+    return result
 end
 
--- ================================================================
--- STOCK NUMBER
--- ================================================================
+local function stockFromText(text)
+    text = tostring(text or "")
 
-local function extractStock(text)
+    local amount =
+        text:match("[xX]%s*(%d+)")
+        or text:match(
+            "(%d+)%s*[Ii]n [Ss]tock"
+        )
+        or text:match(
+            "[Ss]tock%s*:?%s*(%d+)"
+        )
 
-    if not text then
-        return nil
+    if amount then
+        return tonumber(amount)
     end
 
-    text = tostring(text)
+    local lower =
+        text:lower()
 
-    -- x4
-    local xNumber = text:match("[xX]%s*(%d+)")
+    if lower:find(
+        "no stock",
+        1,
+        true
+    )
+    or lower:find(
+        "out of stock",
+        1,
+        true
+    )
+    or lower:find(
+        "sold out",
+        1,
+        true
+    ) then
 
-    if xNumber then
-        return tonumber(xNumber)
-    end
-
-    -- Stock: 4
-    local stockNumber = text:match("[Ss]tock%s*:?%s*(%d+)")
-
-    if stockNumber then
-        return tonumber(stockNumber)
-    end
-
-    -- 4 in stock
-    local inStock = text:match("(%d+)%s*[Ii]n [Ss]tock")
-
-    if inStock then
-        return tonumber(inStock)
+        return 0
     end
 
     return nil
-
 end
 
--- ================================================================
--- FIND STOCK NEAR ITEM
--- ================================================================
+local function findStock(object)
+    local current = object
 
-local function findStock(itemObject)
-
-    local current = itemObject
-
-    for level = 1, 5 do
+    for _ = 1, 5 do
 
         if not current then
             break
         end
 
-        for _, object in ipairs(current:GetDescendants()) do
+        for _, child in ipairs(
+            current:GetDescendants()
+        ) do
 
-            if object:IsA("TextLabel")
-                or object:IsA("TextButton") then
+            if child:IsA("TextLabel")
+                or child:IsA("TextButton") then
 
-                local stock = extractStock(object.Text)
+                local amount =
+                    stockFromText(
+                        child.Text
+                    )
 
-                if stock ~= nil then
-                    return stock
+                if amount ~= nil then
+                    return amount
                 end
-
-                local txt = lower(object.Text)
-
-                if txt:find("no stock")
-                    or txt:find("out of stock")
-                    or txt:find("sold out") then
-
-                    return 0
-
-                end
-
             end
-
         end
 
-        current = current.Parent
-
+        current =
+            current.Parent
     end
 
-    return nil
-
+    return 0
 end
 
--- ================================================================
--- EGG SHOP
--- ================================================================
-
 local EggNames = {
-
     "Capybara Egg",
     "Alpha Capybara Egg",
     "Archer Capybara Egg",
@@ -392,657 +443,123 @@ local EggNames = {
     "Golem Capybara Egg",
     "Robot Capybara Egg",
     "Disco Capybara Egg",
-    "Angel Capybara Egg",
-
+    "Angel Capybara Egg"
 }
 
-local function scanEggShop()
-
-    local result = {}
-
-    local found = {}
-
-    local eventFolder = MainGui:FindFirstChild("Events")
-
-    local toggle = MainGui:FindFirstChild("ToggleEggShopFrame", true)
-
-    if toggle and toggle:IsA("BindableEvent") then
-
-        pcall(function()
-            toggle:Fire()
-        end)
-
-        task.wait(0.2)
-
-    end
-
-    for _, object in ipairs(getTextObjects(MainGui)) do
-
-        local text = object.Text
-
-        for _, eggName in ipairs(EggNames) do
-
-            if text:find(eggName, 1, true) then
-
-                if not found[eggName] then
-
-                    found[eggName] = true
-
-                    local stock = findStock(object)
-
-                    if stock == nil then
-                        stock = 0
-                    end
-
-                    result[eggName] = stock
-
-                end
-
-            end
-
-        end
-
-    end
-
-    return result
-
-end
-
--- ================================================================
--- GEAR SHOP
--- ================================================================
-
 local GearNames = {
-
     "Hatch Hammer",
     "Nametag",
     "Mutation Sponge",
     "Boombox",
     "Bizarre Stopwatch"
-
 }
 
-local function scanGearShop()
-
+local function scanNamed(names)
     local result = {}
-
     local found = {}
 
-    local toggle = MainGui:FindFirstChild("ToggleGearShopFrame", true)
+    local playerGui =
+        Player:FindFirstChild("PlayerGui")
 
-    if toggle and toggle:IsA("BindableEvent") then
+    local mainGui =
+        playerGui
+        and playerGui:FindFirstChild("MainGui")
 
-        pcall(function()
-            toggle:Fire()
-        end)
-
-        task.wait(0.2)
-
+    if not mainGui then
+        return result
     end
 
-    for _, object in ipairs(getTextObjects(MainGui)) do
+    for _, object in ipairs(
+        textObjects(mainGui)
+    ) do
 
-        local text = object.Text
+        for _, name in ipairs(names) do
 
-        for _, gearName in ipairs(GearNames) do
+            if object.Text:find(
+                name,
+                1,
+                true
+            )
+            and not found[name] then
 
-            if text:find(gearName, 1, true) then
+                found[name] = true
 
-                if not found[gearName] then
-
-                    found[gearName] = true
-
-                    local stock = findStock(object)
-
-                    if stock == nil then
-                        stock = 0
-                    end
-
-                    result[gearName] = stock
-
-                end
-
+                result[#result + 1] = {
+                    name = name,
+                    stock = findStock(object)
+                }
             end
-
         end
-
     end
 
     return result
-
 end
 
--- ================================================================
--- MERCHANT — LIVE REMOTE STATE (this is the actual fix)
--- ================================================================
--- The GUI has NO text label that reliably holds the merchant's
--- identity (King Capybara / Martian / Timbles / Jester).
--- MerchantShopInfo only shows an intermittent "leaves in Xm Ys"
--- countdown, or is blank — reading it as the merchant's name is
--- what was silently breaking detection.
---
--- The real source of truth is the server pushing these remotes
--- directly, confirmed live:
---   Remotes.RequestMerchantStock:InvokeServer() -> name, stockTable
---   Remotes.UpdateTravelingMerchantStock(name, stockTable)  [pushed on change]
---   Remotes.MerchantLeft()                                  [pushed when merchant leaves]
+--------------------------------------------------
+-- Main snapshot
+--------------------------------------------------
 
-local currentMerchantName = nil
-local currentMerchantStock = nil -- { [itemName] = count }
+local lastSnapshot = ""
 
-local function formatStockText(count)
+local function buildSnapshot()
+    local playerGui =
+        Player:FindFirstChild("PlayerGui")
 
-    if type(count) == "number" then
+    local mainGui =
+        playerGui
+        and playerGui:FindFirstChild("MainGui")
 
-        if count > 0 then
-            return "x" .. count .. " In stock"
-        else
-            return "NO STOCK"
-        end
+    local drCarrot =
+        latestDrCarrot
 
+    if not drCarrot and mainGui then
+        drCarrot =
+            scrapeDrCarrotGui()
     end
-
-    return tostring(count)
-
-end
-
-local function refreshMerchantFromServer()
-
-    local RequestMerchantStock =
-        Remotes:FindFirstChild("RequestMerchantStock")
-
-    if not RequestMerchantStock then
-        return
-    end
-
-    local ok, name, stock = pcall(function()
-        return RequestMerchantStock:InvokeServer()
-    end)
-
-    if ok and typeof(name) == "string" and name ~= "" then
-        currentMerchantName = name
-        currentMerchantStock = stock
-    end
-
-end
-
--- Pull current state immediately in case a merchant is already
--- active when this script starts, so we don't have to wait for
--- the next UpdateTravelingMerchantStock push to learn about it.
-do
-
-    local active =
-        ServerInfo:FindFirstChild("MERCHANT_ACTIVE")
-
-    if active and active.Value then
-        refreshMerchantFromServer()
-    end
-
-end
-
-local updateMerchantEvent =
-    Remotes:FindFirstChild("UpdateTravelingMerchantStock")
-
-if updateMerchantEvent then
-
-    updateMerchantEvent.OnClientEvent:Connect(function(name, stock)
-        currentMerchantName = name
-        currentMerchantStock = stock
-    end)
-
-end
-
-local merchantLeftEvent =
-    Remotes:FindFirstChild("MerchantLeft")
-
-if merchantLeftEvent then
-
-    merchantLeftEvent.OnClientEvent:Connect(function()
-        currentMerchantName = nil
-        currentMerchantStock = nil
-    end)
-
-end
-
--- Resolves the confirmed root frame the merchant (and other)
--- shop panels live under. Returns nil if it can't be found
--- within the timeout, rather than erroring the whole scan.
-local function getShopRoot()
-
-    local ok, root = pcall(function()
-
-        return PlayerGui
-            :WaitForChild("MainGui", 10)
-            :WaitForChild("Root", 10)
-            :WaitForChild("Frames", 10)
-
-    end)
-
-    if ok then
-        return root
-    end
-
-    return nil
-
-end
-
--- Reads the merchant's live countdown text directly from its
--- in-world billboard, rather than guessing from a fixed clock
--- cycle. Only used to DISPLAY the "leaves in" countdown — has
--- nothing to do with identifying WHICH merchant it is.
-local function readMerchantCountdown()
-
-    local ok, shop = pcall(function()
-
-        return workspace
-            :WaitForChild("World", 2)
-            :WaitForChild("Map", 2)
-            :FindFirstChild("TravelingMerchantShop")
-
-    end)
-
-    if not ok or not shop then
-        return nil
-    end
-
-    local timerLabel = nil
-
-    local billboardPart =
-        shop:FindFirstChild("BillboardPart")
-
-    if billboardPart then
-
-        local cd =
-            billboardPart:FindFirstChild("TravelingMerchantCountdown")
-
-        local frame =
-            cd and cd:FindFirstChild("Frame")
-
-        timerLabel =
-            frame and frame:FindFirstChild("Timer")
-
-    end
-
-    return timerLabel and timerLabel.Text or nil
-
-end
-
-local function scanMerchant()
-
-    -- MERCHANT_ACTIVE is a real server-driven flag — trust it
-    -- directly instead of guessing "is a merchant here" from
-    -- GUI text.
-    local active =
-        ServerInfo:FindFirstChild("MERCHANT_ACTIVE")
-
-    if not active or not active.Value then
-
-        currentMerchantName = nil
-        currentMerchantStock = nil
-
-        return nil
-
-    end
-
-    if not currentMerchantName then
-
-        -- MERCHANT_ACTIVE flipped true before our initial fetch
-        -- or the push event caught up — try pulling once more
-        -- before giving up on this scan.
-        refreshMerchantFromServer()
-
-    end
-
-    if not currentMerchantName then
-
-        warn("[CVP] MERCHANT_ACTIVE is true but no merchant identity has arrived yet from RequestMerchantStock / UpdateTravelingMerchantStock.")
-
-        return nil
-
-    end
-
-    local items = {}
-
-    if currentMerchantStock then
-
-        for itemName, count in pairs(currentMerchantStock) do
-
-            table.insert(items, {
-
-                name = itemName,
-                stock = formatStockText(count)
-
-            })
-
-        end
-
-    end
-
-    local timeLeft =
-        readMerchantCountdown()
-
-    print(
-        "[CVP] Merchant scan result — name: " ..
-        tostring(currentMerchantName) ..
-        ", items found: " ..
-        tostring(#items) ..
-        ", timeLeft: " ..
-        tostring(timeLeft)
-    )
 
     return {
+        eggShop = scanNamed(EggNames),
 
-        name = currentMerchantName,
-        timeLeft = timeLeft,
-        items = items
+        gearShop = scanNamed(GearNames),
 
+        drCarrot = drCarrot
     }
-
 end
-
--- ================================================================
--- WEATHER
--- ================================================================
-
-local function identifyWeather()
-
-    -- The old approach scanned ALL of MainGui's text for literal
-    -- matches against every possible weather name — which was
-    -- too broad and was picking up unrelated UI (a weather
-    -- list/menu, not what's actually active), causing 8-10
-    -- "active" weathers to be reported at once when really only
-    -- 1-2 were. ACTIVE_WEATHERS is the same kind of authoritative
-    -- server-driven signal that fixed the merchant scanner —
-    -- trust it directly instead of guessing from GUI text.
-
-    local weatherValue =
-        ServerInfo:FindFirstChild("ACTIVE_WEATHERS")
-
-    if not weatherValue then
-
-        warn("[CVP] ServerInfo.ACTIVE_WEATHERS not found — can't determine active weather.")
-
-        return nil
-
-    end
-
-    local raw = weatherValue.Value
-
-    if raw == nil or raw == "" then
-        return nil
-    end
-
-    local found = {}
-
-    if typeof(raw) == "string" then
-
-        -- Handles a single name or a delimited list — comma,
-        -- semicolon, or "+" are the most common separators for
-        -- this kind of value.
-        for name in raw:gmatch("[^,;+]+") do
-
-            name = name:match("^%s*(.-)%s*$")
-
-            if name ~= "" then
-                table.insert(found, name)
-            end
-
-        end
-
-    elseif typeof(raw) == "table" then
-
-        for _, name in ipairs(raw) do
-            table.insert(found, tostring(name))
-        end
-
-    end
-
-    if #found == 0 then
-        return nil
-    end
-
-    print(
-        "[CVP] Weather scan result — active: " ..
-        table.concat(found, ", ")
-    )
-
-    return { names = found }
-
-end
-
--- ================================================================
--- MAIN SCAN
--- ================================================================
-
-local ScanNumber = 0
-
-local function runScan()
-
-    ScanNumber += 1
-
-    Status.Text =
-        "🔍 Scanning... #" ..
-        tostring(ScanNumber)
-
-    Status.TextColor3 =
-        Color3.fromRGB(255, 200, 60)
-
-    local eggShop = {}
-    local gearShop = {}
-    local merchant = nil
-    local weather = nil
-
-    local eggSuccess, eggResult =
-        pcall(scanEggShop)
-
-    if eggSuccess then
-        eggShop = eggResult
-    else
-        warn("[CVP] Egg scanner error:", eggResult)
-    end
-
-    local gearSuccess, gearResult =
-        pcall(scanGearShop)
-
-    if gearSuccess then
-        gearShop = gearResult
-    else
-        warn("[CVP] Gear scanner error:", gearResult)
-    end
-
-    local merchantSuccess, merchantResult =
-        pcall(scanMerchant)
-
-    if merchantSuccess then
-        merchant = merchantResult
-    else
-        warn("[CVP] Merchant scanner error:", merchantResult)
-    end
-
-    local weatherSuccess, weatherResult =
-        pcall(identifyWeather)
-
-    if weatherSuccess then
-        weather = weatherResult
-    else
-        warn("[CVP] Weather scanner error:", weatherResult)
-    end
-
-    local payload = {
-
-        game = "Capybaras vs Plants",
-
-        eggShop = eggShop,
-
-        gearShop = gearShop,
-
-        -- IMPORTANT: use `or false` here, not just `merchant`.
-        -- If merchant is Lua nil, JSONEncode DROPS the key
-        -- entirely instead of sending null — the API can't then
-        -- tell "no merchant right now" apart from "this update
-        -- just didn't mention merchant", and keeps showing the
-        -- OLD merchant forever. Sending false is explicit and
-        -- survives JSON encoding.
-        merchant = merchant or false,
-
-        weather = weather or false
-
-    }
-
-    local encoded
-
-    local encodeSuccess, encodeResult =
-        pcall(function()
-
-            return HttpService:JSONEncode(payload)
-
-        end)
-
-    if not encodeSuccess then
-
-        Status.Text = "❌ JSON encode failed"
-
-        warn("[CVP] JSON error:", encodeResult)
-
-        return
-
-    end
-
-    encoded = encodeResult
-
-    print("======================================")
-    print("[CVP] SCAN #" .. ScanNumber)
-    print("======================================")
-
-    print("Egg Shop:")
-    print(HttpService:JSONEncode(eggShop))
-
-    print("Gear Shop:")
-    print(HttpService:JSONEncode(gearShop))
-
-    print("Merchant:")
-    print(HttpService:JSONEncode(merchant))
-
-    print("Weather:")
-    print(HttpService:JSONEncode(weather))
-
-    print("Sending to Railway...")
-
-    local success, response =
-        sendRequest(API_URL, encoded)
-
-    if success then
-
-        Status.Text =
-            "✅ Sent successfully #" ..
-            tostring(ScanNumber)
-
-        Status.TextColor3 =
-            Color3.fromRGB(60, 210, 100)
-
-        local eggInStock = 0
-
-        for _, stock in pairs(eggShop) do
-            if stock and stock > 0 then
-                eggInStock += 1
-            end
-        end
-
-        local gearInStock = 0
-
-        for _, stock in pairs(gearShop) do
-            if stock and stock > 0 then
-                gearInStock += 1
-            end
-        end
-
-        local weatherDisplay = "Clear"
-
-        if weather and weather.names and #weather.names > 0 then
-            weatherDisplay = table.concat(weather.names, ", ")
-        end
-
-        DataLabel.Text =
-            "🥚 Eggs: " ..
-            tostring(eggInStock) ..
-            "/" ..
-            tostring(#EggNames) ..
-            " in stock" ..
-            "\n⚙️ Gear: " ..
-            tostring(gearInStock) ..
-            "/" ..
-            tostring(#GearNames) ..
-            " in stock" ..
-            "\n🚚 Merchant: " ..
-            tostring(merchant and merchant.name or "None") ..
-            "\n🌦 Weather: " ..
-            weatherDisplay
-
-        print("[CVP] Railway response:")
-        print(response)
-
-    else
-
-        Status.Text =
-            "❌ Railway failed"
-
-        Status.TextColor3 =
-            Color3.fromRGB(220, 70, 70)
-
-        DataLabel.Text =
-            tostring(response)
-
-        warn("[CVP] Railway error:", response)
-
-    end
-
-end
-
--- ================================================================
--- START
--- ================================================================
-
-print("======================================")
-print("🐾 CVP NOTIFIER")
-print("======================================")
-
-print("MainGui:", MainGui:GetFullName())
-
-print("API:", API_URL)
-
-print("Starting scanner...")
-
-Status.Text = "🟢 Running"
 
 task.spawn(function()
 
-    while ScreenGui.Parent do
+    while task.wait(SCAN_EVERY) do
 
-        local success, errorMessage =
-            pcall(runScan)
+        local payload =
+            buildSnapshot()
 
-        if not success then
-
-            warn(
-                "[CVP] SCAN CRASH:",
-                errorMessage
+        local signature =
+            HttpService:JSONEncode(
+                payload
             )
 
-            Status.Text =
-                "❌ Scanner crashed"
+        if signature ~= lastSnapshot then
 
-            Status.TextColor3 =
-                Color3.fromRGB(220, 70, 70)
+            local ok, err =
+                post(payload)
 
-            DataLabel.Text =
-                tostring(errorMessage)
-
+            if ok then
+                lastSnapshot =
+                    signature
+            else
+                warn(
+                    "CVP Notifier API error:",
+                    err
+                )
+            end
         end
-
-        task.wait(SCAN_EVERY)
-
     end
-
 end)
 
-print("[CVP] Notifier started.")
+post({
+    drCarrot = latestDrCarrot
+})
+
+print(
+    "CVP Notifier loaded - Dr. Carrot Scrap Shop enabled"
+)
